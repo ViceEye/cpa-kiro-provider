@@ -1,0 +1,17 @@
+Kiro Provider for CLIProxyAPI
+Copyright (C) 2026 Kiro Gateway contributors
+
+This independent plugin is derived from protocol, authentication, conversion,
+and streaming behavior implemented by Kiro Gateway:
+https://github.com/jwadow/kiro-gateway
+
+Kiro Gateway is licensed under GNU Affero General Public License version 3.
+This plugin is therefore distributed as a separate AGPL-3.0-or-later component.
+It is not part of CLIProxyAPI's MIT-licensed core.
+
+CLIProxyAPI and its stable native plugin ABI are available under the MIT License:
+https://github.com/router-for-me/CLIProxyAPI
+
+This project is not affiliated with, endorsed by, or sponsored by Amazon Web
+Services, Anthropic, or Kiro. Users are responsible for compliance with the
+terms applicable to their accounts and upstream services.

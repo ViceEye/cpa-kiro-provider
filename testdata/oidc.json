@@ -1,0 +1,9 @@
+{
+  "accessToken": "fake-oidc-access-token",
+  "refreshToken": "fake-oidc-refresh-token",
+  "clientId": "fake-client-id",
+  "clientSecret": "fake-client-secret",
+  "expiresAt": "2030-01-01T00:00:00Z",
+  "profileArn": "arn:aws:codewhisperer:us-east-1:000000000000:profile/fake",
+  "region": "us-east-1"
+}

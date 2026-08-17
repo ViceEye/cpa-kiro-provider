@@ -1,0 +1,22 @@
+host: "0.0.0.0"
+port: 8317
+auth-dir: "/tmp/kiro-provider-auths"
+api-keys:
+  - "kiro-provider-integration-key"
+remote-management:
+  allow-remote: true
+  secret-key: "kiro-provider-integration-management-key"
+  disable-control-panel: true
+debug: false
+plugins:
+  enabled: true
+  dir: "/plugins"
+  configs:
+    kiro-provider:
+      enabled: true
+      priority: 100
+      import_mode: reference
+      runtime_base_url: "http://kiro-mock:18080"
+      model_discovery_url: "http://kiro-mock:18080"
+      usage_url: "http://kiro-mock:18080"
+      desktop_refresh_url: "http://kiro-mock:18080/refreshToken"

@@ -1,0 +1,34 @@
+# Build and test output
+/dist/
+/kiro-provider
+/kiro-provider.exe
+*.so
+*.dll
+*.dylib
+*.test
+*.coverprofile
+coverage.out
+
+# Local credentials and CPA state
+/.env
+/.env.*
+!/.env.example
+/auths/
+/credentials/
+/config.yaml
+/.codex-tmp/
+*.oauth
+*.pem
+*.key
+*.p12
+*.sqlite
+*.sqlite3
+*.db
+
+# Local tooling
+/.idea/
+/.vscode/
+/.local/
+*.log
+.DS_Store
+Thumbs.db

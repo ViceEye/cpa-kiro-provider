@@ -1,0 +1,19 @@
+{
+  "accounts": [
+    {
+      "label": "Kiro Fake Account A",
+      "accessToken": "fake-account-a-access",
+      "refreshToken": "fake-account-a-refresh",
+      "expiresAt": "2030-01-01T00:00:00Z",
+      "region": "us-east-1"
+    },
+    {
+      "label": "Kiro Fake Account B",
+      "accessToken": "fake-account-b-access",
+      "refreshToken": "fake-account-b-refresh",
+      "expiresAt": "2030-01-01T00:00:00Z",
+      "profileArn": "arn:aws:codewhisperer:us-east-1:000000000000:profile/fake-b",
+      "region": "us-east-1"
+    }
+  ]
+}

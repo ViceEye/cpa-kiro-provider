@@ -1,0 +1,20 @@
+host: "0.0.0.0"
+port: 8317
+auth-dir: "/tmp/kiro-provider-oauth-auths"
+api-keys:
+  - "kiro-provider-oauth-api-key"
+remote-management:
+  allow-remote: true
+  secret-key: "kiro-provider-oauth-management-key"
+  disable-control-panel: true
+plugins:
+  enabled: true
+  dir: "/plugins"
+  configs:
+    kiro-provider:
+      enabled: true
+      priority: 100
+      login_mode: kiro-browser
+      browser_redirect_uri: "http://localhost:3128"
+      desktop_token_url: "http://kiro-mock:18080/oauth/token"
+      api_region: "eu-west-1"
