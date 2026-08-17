@@ -30,6 +30,14 @@ jobs:
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
             -buildvcs=false -trimpath -buildmode=c-shared \
             -ldflags="-s -w" \
-            -o dist/linux/amd64/kiro-provider-v0.5.6.so ./cmd/kiro-provider
-          rm -f dist/linux/amd64/kiro-provider-v0.5.6.h
-          test -s dist/linux/amd64/kiro-provider-v0.5.6.so
+            -o dist/linux/amd64/kiro-provider-v0.6.1.so ./cmd/kiro-provider
+          rm -f dist/linux/amd64/kiro-provider-v0.6.1.h
+          test -s dist/linux/amd64/kiro-provider-v0.6.1.so
+          cd dist/linux/amd64
+          sha256sum kiro-provider-v0.6.1.so > kiro-provider-v0.6.1.so.sha256
+      - name: Upload Linux plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: kiro-provider-linux-amd64-v0.6.1
+          path: dist/linux/amd64/
+          if-no-files-found: error

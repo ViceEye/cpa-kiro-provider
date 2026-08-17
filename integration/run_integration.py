@@ -6,7 +6,9 @@ from __future__ import annotations
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
+import time
 from typing import Any
 
 
@@ -51,6 +53,22 @@ def management_json(path: str) -> dict[str, Any]:
         raise AssertionError(f"{path} returned HTTP {error.code}: {detail}") from error
 
 
+def public_request(path: str, expected_status: int = 200) -> bytes:
+    req = urllib.request.Request(CPA + path, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            assert response.status == expected_status, response.status
+            return response.read()
+    except urllib.error.HTTPError as error:
+        body = error.read()
+        if error.code == expected_status:
+            return body
+        raise AssertionError(
+            f"{path} returned HTTP {error.code}, expected {expected_status}: "
+            f"{body.decode('utf-8', 'replace')}"
+        ) from error
+
+
 def control(statuses: list[int]) -> None:
     result = request_json("/control", {"statuses": statuses}, mock=True)
     assert result == {"ok": True}, result
@@ -89,6 +107,12 @@ def assert_two_account_failover(snapshot: dict[str, Any], attempts: int = 2) -> 
 
 
 def main() -> None:
+    plugins = management_json("/v0/management/plugins")
+    kiro = next(item for item in plugins["plugins"] if item["id"] == "kiro-provider")
+    assert kiro["effective_enabled"] is True, kiro
+    assert kiro["supports_oauth"] is True, kiro
+    assert kiro["oauth_provider"] == "kiro", kiro
+
     models = request_json("/v1/models")
     model_ids = {item["id"] for item in models["data"]}
     required = {
@@ -105,7 +129,10 @@ def main() -> None:
 
     quota = management_json("/v0/management/plugins/kiro-provider/quota")
     assert quota["provider"] == "kiro", quota
-    assert len(quota["accounts"]) == 2, quota
+    assert len(quota["accounts"]) >= 2, quota
+    assert {"Kiro Fake Account A", "Kiro Fake Account B"} <= {
+        account["label"] for account in quota["accounts"]
+    }, quota
     for account in quota["accounts"]:
         assert account["status"] == "ok", account
         assert account["subscription"] == "KIRO FIXTURE", account
@@ -155,7 +182,37 @@ def main() -> None:
     assert "mock " in failover_stream and "success" in failover_stream, failover_stream
     assert_two_account_failover(stats())
 
-    print("PASS: Kiro provider OpenAI Docker integration suite")
+    login = management_json("/v0/management/kiro-auth-url")
+    assert login["status"] == "ok" and login["state"], login
+    login_url = urllib.parse.urlparse(login["url"])
+    login_query = urllib.parse.parse_qs(login_url.query)
+    assert login_url.netloc == "app.kiro.dev" and login_url.path == "/signin", login
+    assert login_query["redirect_uri"] == [
+        "http://localhost:8317/v0/resource/plugins/kiro-provider/oauth"
+    ], login_query
+
+    callback_path = "/v0/resource/plugins/kiro-provider/oauth/signin/callback?" + urllib.parse.urlencode(
+        {"state": login["state"], "code": "fixture-browser-code"}
+    )
+    callback_page = public_request(callback_path).decode()
+    assert "Kiro authorization received" in callback_page, callback_page
+
+    invalid_path = "/v0/resource/plugins/kiro-provider/oauth?" + urllib.parse.urlencode(
+        {"state": "00000000-0000-4000-8000-000000000000", "code": "fixture-browser-code"}
+    )
+    public_request(invalid_path, expected_status=400)
+
+    status: dict[str, Any] = {"status": "wait"}
+    for _ in range(10):
+        status = management_json(
+            "/v0/management/get-auth-status?" + urllib.parse.urlencode({"state": login["state"]})
+        )
+        if status["status"] != "wait":
+            break
+        time.sleep(0.2)
+    assert status["status"] == "ok", status
+
+    print("PASS: Kiro provider OpenAI and public OAuth Resource Route integration suite")
 
 
 if __name__ == "__main__":

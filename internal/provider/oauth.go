@@ -27,6 +27,7 @@ type browserLoginSession struct {
 	LoginState browserLoginState
 	Callback   *oauthCallbackPayload
 	Device     *deviceLoginState
+	Continuing bool
 }
 
 var browserLoginSessions = struct {
@@ -63,7 +64,7 @@ func startLogin(raw []byte) ([]byte, error) {
 	if config.LoginMode == "aws-device" {
 		return startDeviceLogin(raw)
 	}
-	if config.LoginMode == "organization-browser" || (config.LoginMode == defaultLoginMode && !strings.EqualFold(strings.TrimRight(config.SSOStartURL, "/"), strings.TrimRight(defaultSSOStartURL, "/"))) {
+	if config.LoginMode == "organization-browser" {
 		return startIDCBrowserLogin(raw)
 	}
 	return startBrowserLogin(raw)
@@ -265,7 +266,11 @@ func startBrowserLogin(raw []byte) ([]byte, error) {
 	}
 	state := randomID()
 	config := loadedConfig()
-	redirectURI := strings.TrimSpace(config.BrowserRedirectURI)
+	redirectURL, errRedirect := parseBrowserRedirectURI(config.BrowserRedirectURI)
+	if errRedirect != nil {
+		return errorEnvelope("invalid_login_config", errRedirect.Error(), false, http.StatusInternalServerError), nil
+	}
+	redirectURI := redirectURL.String()
 	signInURL, errURL := url.Parse(strings.TrimSpace(config.BrowserSignInURL))
 	if errURL != nil || signInURL.Scheme != "https" || signInURL.Host == "" {
 		return errorEnvelope("invalid_login_config", "Kiro browser sign-in URL is invalid", false, http.StatusInternalServerError), nil
@@ -504,6 +509,9 @@ func beginDeviceAuthorization(callbackID, state, startURL, region, apiRegion str
 	if loginURL == "" || strings.TrimSpace(device.DeviceCode) == "" {
 		return loginState, "", time.Time{}, statusError{Code: "invalid_login_response", Message: "Kiro device authorization did not return a login URL", HTTPStatus: http.StatusBadGateway}
 	}
+	if errVerification := validateVerificationURL(loginURL, region, startURL); errVerification != nil {
+		return loginState, "", time.Time{}, errVerification
+	}
 	if device.ExpiresIn <= 0 {
 		device.ExpiresIn = 600
 	}
@@ -697,7 +705,7 @@ func storeBrowserCallback(state string, callback oauthCallbackPayload) bool {
 	browserLoginSessions.Lock()
 	defer browserLoginSessions.Unlock()
 	session, exists := browserLoginSessions.sessions[state]
-	if !exists {
+	if !exists || session.Callback != nil || session.Device != nil || session.Continuing {
 		return false
 	}
 	callbackCopy := callback
@@ -715,8 +723,32 @@ func storeBrowserDeviceContinuation(state string, device deviceLoginState) bool 
 	}
 	deviceCopy := device
 	session.Device = &deviceCopy
+	session.Continuing = false
 	browserLoginSessions.sessions[state] = session
 	return true
+}
+
+func claimBrowserDeviceContinuation(state string) bool {
+	browserLoginSessions.Lock()
+	defer browserLoginSessions.Unlock()
+	session, exists := browserLoginSessions.sessions[state]
+	if !exists || session.Callback != nil || session.Device != nil || session.Continuing {
+		return false
+	}
+	session.Continuing = true
+	browserLoginSessions.sessions[state] = session
+	return true
+}
+
+func releaseBrowserDeviceContinuation(state string) {
+	browserLoginSessions.Lock()
+	defer browserLoginSessions.Unlock()
+	session, exists := browserLoginSessions.sessions[state]
+	if !exists || session.Device != nil {
+		return
+	}
+	session.Continuing = false
+	browserLoginSessions.sessions[state] = session
 }
 
 func browserDeviceContinuation(state string) (deviceLoginState, bool) {
@@ -756,7 +788,7 @@ func clearBrowserLoginSession(state string) {
 
 func validateOrganizationParameters(startURL, region string) error {
 	parsed, errParse := url.Parse(strings.TrimSpace(startURL))
-	if errParse != nil || parsed.Scheme != "https" || parsed.Hostname() == "" {
+	if errParse != nil || parsed.Scheme != "https" || parsed.Hostname() == "" || parsed.User != nil {
 		return statusError{Code: "invalid_callback", Message: "Kiro organization callback returned an invalid issuer URL", HTTPStatus: http.StatusBadRequest}
 	}
 	host := strings.ToLower(parsed.Hostname())

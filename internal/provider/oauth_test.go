@@ -236,7 +236,7 @@ func TestDeviceLoginStartAndPoll(t *testing.T) {
 		case "https://oidc.eu-west-1.amazonaws.com/client/register":
 			return hostHTTPResponse{StatusCode: http.StatusOK, Body: []byte(`{"clientId":"client-test","clientSecret":"secret-test","clientSecretExpiresAt":4102444800}`)}, nil
 		case "https://oidc.eu-west-1.amazonaws.com/device_authorization":
-			return hostHTTPResponse{StatusCode: http.StatusOK, Body: []byte(`{"deviceCode":"device-test","userCode":"ABCD-EFGH","verificationUri":"https://device.sso.us-east-1.amazonaws.com/","verificationUriComplete":"https://device.sso.us-east-1.amazonaws.com/?user_code=ABCD-EFGH","expiresIn":600,"interval":5}`)}, nil
+			return hostHTTPResponse{StatusCode: http.StatusOK, Body: []byte(`{"deviceCode":"device-test","userCode":"ABCD-EFGH","verificationUri":"https://example.awsapps.com/start/","verificationUriComplete":"https://example.awsapps.com/start/#/device?user_code=ABCD-EFGH","expiresIn":600,"interval":5}`)}, nil
 		case "https://oidc.eu-west-1.amazonaws.com/token":
 			return hostHTTPResponse{StatusCode: http.StatusOK, Body: []byte(`{"accessToken":"access-test","refreshToken":"refresh-test","expiresIn":3600,"tokenType":"Bearer"}`)}, nil
 		case "https://service.fixture.invalid/":

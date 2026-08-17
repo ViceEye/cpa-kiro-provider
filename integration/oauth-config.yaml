@@ -6,7 +6,7 @@ api-keys:
 remote-management:
   allow-remote: true
   secret-key: "kiro-provider-oauth-management-key"
-  disable-control-panel: true
+  disable-control-panel: false
 plugins:
   enabled: true
   dir: "/plugins"
@@ -15,6 +15,6 @@ plugins:
       enabled: true
       priority: 100
       login_mode: kiro-browser
-      browser_redirect_uri: "http://localhost:3128"
+      browser_redirect_uri: "http://localhost:28317/v0/resource/plugins/kiro-provider/oauth"
       desktop_token_url: "http://kiro-mock:18080/oauth/token"
       api_region: "eu-west-1"

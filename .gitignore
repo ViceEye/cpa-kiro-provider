@@ -26,6 +26,9 @@ coverage.out
 *.db
 
 # Local tooling
+/__pycache__/
+**/__pycache__/
+*.pyc
 /.idea/
 /.vscode/
 /.local/

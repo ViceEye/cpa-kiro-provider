@@ -7,49 +7,49 @@ CLIProxyAPI. It imports existing Kiro IDE, kiro-cli, Amazon Q, and AWS SSO
 credentials and exposes Kiro runtime models through the normal CPA API.
 
 The production runtime consists only of CLIProxyAPI and
-`kiro-provider-v0.5.6.so`. Kiro Gateway is the protocol reference and is not a
+`kiro-provider-v0.6.1.so`. Kiro Gateway is the protocol reference and is not a
 sidecar or runtime dependency.
-
-## Unreleased
-
-- Split the native entry point, provider orchestration, chat conversion, Event
-  Stream parser, and shared JSON helpers into focused Go packages.
-- Added GitHub Actions checks for formatting, `go vet`, unit tests, and the
-  Linux amd64 `c-shared` build.
-- Removed the repository-wide `.gitattributes` override.
 
 ## Current release
 
-### v0.5.6 - 2026-08-17
+### v0.6.1 - 2026-08-17
 
 Changes:
 
-- Reapplies system and developer instructions after oversized conversation
-  history is trimmed to Kiro's request limit.
-- Moves those instructions to the current user message when all previous
-  history must be removed.
-- Keeps history trimming aligned to conversation turns and removes leading
-  orphaned tool-result turns.
-- Uses the Go standard library for trimming bounds and keeps test fixtures on
-  the same runtime data shape as production code.
+- Documented the supported Kiro login modes, plugin configuration, remote CPA
+  limitations, credential import, token refresh, and quota-panel deployment.
+- Corrected the remote browser-login guidance: production `app.kiro.dev`
+  accepts only loopback redirect URIs or `app.kiro.dev` subdomains. A public
+  CPA hostname cannot be used directly as `browser_redirect_uri`.
+- Clarified that the optional management-panel build changes only Kiro quota
+  display; OAuth remains owned by CPA and the plugin.
+- Accepts AWS device-verification links on either the regional
+  `device.sso.{region}.amazonaws.com` host or the exact configured
+  `sso_start_url` host.
+- Keeps arbitrary AWS and third-party verification hosts rejected.
 
 Fixes:
 
-- Fixed long Codex conversations silently losing their system or developer
-  instructions after payload trimming.
-- Fixed oversized tool conversations potentially starting with a tool result
-  whose matching assistant tool call had already been removed.
+- Fixed organization device login failing with
+  `Kiro device authorization returned an untrusted verification URL` when AWS
+  returns the organization's `*.awsapps.com` verification page.
+
+Compatibility note: live production validation on 2026-08-17 confirmed that
+`app.kiro.dev` rejects third-party public HTTPS callback hosts. The plugin-owned
+Resource Routes remain available for compatible environments, but they do not
+remove the localhost requirement for production Kiro browser OAuth. Remote
+organization and Builder ID logins should use `aws-device`.
 
 Verification completed for this release:
 
 - `go vet ./...`
 - `go test ./...`
 - Linux amd64 `c-shared` build in Docker.
-- Network-isolated CPA integration tests covering model discovery, quota,
-  streaming and non-streaming chat completions, tools, refresh, and account
-  failover.
+- Network-isolated CPA integration tests covering the unauthenticated Resource
+  Route, OAuth persistence, model discovery, quota, chat completions, tools,
+  refresh, and account failover.
 
-## Development history
+## Release changelog
 
 Early `0.x` versions were fast local integration builds rather than separately
 published releases. The milestones below record verified capability groups;
@@ -63,6 +63,8 @@ commit.
 | `v0.5.0-v0.5.4` | 2026-08-16 to 2026-08-17 | Added first-time Kiro browser login, organization IAM Identity Center continuation, device authorization, region separation, persisted OAuth repair, and request compatibility fixes found during live CPA testing. |
 | `v0.5.5` | 2026-08-17 | Added bounded history trimming so large Codex requests remain below Kiro's payload limit while preserving complete turns. |
 | `v0.5.6` | 2026-08-17 | Preserved system/developer instructions during trimming and hardened orphaned tool-result removal. |
+| `v0.6.0` | 2026-08-17 | Added plugin-owned OAuth Resource Routes and callback handling for compatible environments. Production `app.kiro.dev` still requires a loopback redirect URI, so remote Builder ID and organization login use `aws-device`. |
+| `v0.6.1` | 2026-08-17 | Accepted organization-specific AWS device verification URLs without broadening the trusted-host boundary. |
 
 When Git history starts, use commits and tags as the source of truth for later
 releases instead of extending this reconstructed pre-Git history.
@@ -91,28 +93,171 @@ releases instead of extending this reconstructed pre-Git history.
 - CPA host HTTP bridge usage for every upstream request.
 - HTTP status propagation for CPA refresh, cooldown, retry, and failover.
 
-The management panel login action defaults to the same browser shape used by
-Kiro CLI: the plugin generates a fresh state and PKCE pair and returns an
-`https://app.kiro.dev/signin?...` URL. The verifier stays only in CPA's in-memory
-plugin OAuth session. CPA polls the plugin and saves the completed credential.
+## Quick start
 
-For a remote CPA server, social Kiro login redirects the user's browser to
-`http://localhost:3128`. If no local callback helper is listening, copy the
-final URL from the browser address bar into CPA's OAuth callback field. CPA
-stores the callback in its auth directory and the plugin exchanges the code.
+1. Build or download the Linux `.so` and place it under CPA's configured
+   plugin directory.
+2. Enable `plugins.enabled` and `plugins.configs.kiro-provider.enabled`.
+3. Choose one login mode from the next section. Remote organization accounts
+   should use `aws-device`.
+4. Restart or recreate the CPA service and confirm that logs show
+   `plugin registered plugin_id=kiro-provider`.
+5. Open CPA's OAuth page, select **Kiro OAuth**, and complete sign-in.
+6. Confirm that Kiro models appear in `GET /v1/models`, then call them through
+   the normal OpenAI Chat Completions endpoint.
+7. Install the optional customized `management.html` only when Kiro balance
+   and quota cards are required in the web panel.
 
-Kiro's unified sign-in page returns an intermediate `login_option=awsidc`
-callback for organization accounts rather than an OAuth code. The independent
-management panel submits this URL to the plugin's
-`POST /v0/management/plugins/kiro-provider/oauth/callback` route. The plugin
-reads the returned `issuer_url` and `idc_region`, registers an AWS SSO OIDC
-client, starts device authorization, and returns the organization verification
-link and user code. CPA keeps polling the original plugin login session and
-saves the credential after the user approves it. No CPA core change is needed.
+The plugin, OAuth login, model proxy, automatic token refresh, and quota API do
+not require CPA core changes. Only the visual Kiro quota cards require the
+customized management frontend.
 
-`organization-browser` remains available as an experimental direct
-authorization-code flow. The Kiro CLI-compatible two-stage portal/device flow
-uses the default `kiro-browser` mode.
+## Plugin configuration
+
+Configure Kiro either from **Management Center → Plugins → Kiro → Edit
+configuration** or directly in CPA's `config.yaml` under
+`plugins.configs.kiro-provider`. The panel and YAML edit the same plugin-scoped
+settings; rebuilding the `.so` is not required when only these values change.
+
+### Organization account template
+
+For a remote CPA server using AWS IAM Identity Center, start with this complete
+configuration:
+
+```yaml
+plugins:
+  enabled: true
+  dir: /CLIProxyAPI/plugins
+  configs:
+    kiro-provider:
+      enabled: true
+      priority: 100
+      import_mode: reference
+      login_mode: aws-device
+      browser_redirect_uri: http://localhost:3128
+      sso_start_url: https://your-company.awsapps.com/start
+      sso_region: eu-west-1
+      api_region: us-east-1
+      static_models: []
+```
+
+Replace:
+
+- `sso_start_url` with the organization's AWS access portal URL.
+- `sso_region` with the IAM Identity Center region used by that organization.
+- `dir` with the plugin path visible inside the CPA process or container.
+
+Keep `api_region: us-east-1` unless the Kiro runtime for the account is known to
+use another region. `sso_region` controls login and token refresh;
+`api_region` controls Kiro models, profiles, chat, and quota calls.
+
+`login_mode: aws-device` names the OAuth flow, not the account type. A
+non-default organization `sso_start_url` makes the resulting credential a
+**Kiro Organization** credential. `browser_redirect_uri` is ignored by this
+device flow, but keeping the safe localhost default prevents an invalid public
+redirect if the login mode is changed later.
+
+After saving, confirm that CPA logs contain:
+
+```text
+plugin registered plugin_id=kiro-provider
+```
+
+Then open **OAuth → Kiro OAuth**, follow the AWS verification link, complete
+organization SSO, and leave the panel open until CPA reports success.
+
+### Configuration reference
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `enabled` | `true` | Enables this plugin configuration. |
+| `priority` | host default | CPA provider priority. |
+| `import_mode` | `reference` | Controls imported files: `reference` reloads the source; `copy` stores an independent copy. OAuth logins are stored by CPA. |
+| `login_mode` | `kiro-browser` | Selects `kiro-browser`, `organization-browser`, or `aws-device`. |
+| `sso_start_url` | `https://view.awsapps.com/start` | Default means Builder ID; an organization `*.awsapps.com/start` URL means IAM Identity Center. |
+| `sso_region` | `us-east-1` | AWS SSO OIDC registration, device authorization, and refresh region. |
+| `api_region` | `us-east-1` | Kiro runtime, model discovery, profile, and quota region. |
+| `browser_redirect_uri` | `http://localhost:3128` | Used only by browser authorization-code flows; Kiro rejects arbitrary public CPA domains. |
+| `model_prefix` | `kiro/` | Prefix registered on discovered model IDs. Use another non-empty prefix only when needed. |
+| `static_models` | `[]` | Additional fallback model IDs when dynamic discovery is unavailable. |
+
+`runtime_base_url`, `model_discovery_url`, `usage_url`, refresh URLs, and token
+URLs are test/private-gateway overrides. Leave them unset for production Kiro.
+
+## Login modes
+
+Choose the flow based on the account and where CPA runs:
+
+| `login_mode` | Use case | Redirect behavior | Remote CPA |
+| --- | --- | --- | --- |
+| `aws-device` | AWS Builder ID or organization IAM Identity Center | Opens an AWS verification URL and CPA polls for completion | Recommended |
+| `kiro-browser` | Kiro personal/social browser OAuth compatible with kiro-cli | Kiro redirects to `http://localhost:3128` | Requires a local callback listener, relay, or manual callback submission |
+| `organization-browser` | Experimental direct IAM Identity Center authorization-code flow | AWS redirects to `http://localhost:3128/signin/callback` | Requires a local callback listener or relay |
+
+Kiro's production sign-in page rejects arbitrary public redirect hosts with
+`Invalid redirect URI. Must be localhost or a subdomain of app.kiro.dev`.
+Do not configure a CPA domain such as `https://cpa.example.com/...` as
+`browser_redirect_uri`.
+
+### Organization login on a remote CPA server
+
+Use AWS device authorization. This is the simplest flow because it has no
+browser callback:
+
+```yaml
+plugins:
+  configs:
+    kiro-provider:
+      enabled: true
+      login_mode: aws-device
+      sso_start_url: https://example.awsapps.com/start
+      sso_region: eu-west-1
+      api_region: us-east-1
+```
+
+Open CPA's OAuth page, start **Kiro OAuth**, open the returned AWS verification
+URL, complete organization SSO, and leave the panel open while CPA polls and
+saves the credential. Although the setting is named `aws-device`, the account
+is stored as **Kiro Organization** whenever `sso_start_url` is an organization
+IAM Identity Center URL instead of the default Builder ID URL.
+
+### Builder ID device login
+
+Use the Builder ID start URL. `sso_region` defaults to `us-east-1` when omitted:
+
+```yaml
+plugins:
+  configs:
+    kiro-provider:
+      login_mode: aws-device
+      sso_start_url: https://view.awsapps.com/start
+      sso_region: us-east-1
+      api_region: us-east-1
+```
+
+### Personal/social browser login
+
+Use the Kiro CLI-compatible loopback redirect:
+
+```yaml
+plugins:
+  configs:
+    kiro-provider:
+      login_mode: kiro-browser
+      browser_redirect_uri: http://localhost:3128
+      api_region: us-east-1
+```
+
+When CPA is remote, `localhost` belongs to the browser machine, not the CPA
+server. Complete this flow with one of the following:
+
+1. Run a loopback callback relay on the browser machine.
+2. Use a management panel that submits the complete localhost callback URL to
+   `POST /v0/management/plugins/kiro-provider/oauth/callback`.
+3. Sign in with Kiro CLI or Quotio and import the resulting credential.
+
+Never paste OAuth callback URLs into logs or issues; they may contain a
+short-lived authorization code.
 
 ## Repository layout
 
@@ -141,49 +286,28 @@ docker build --output type=local,dest=dist .
 The artifact is written to:
 
 ```text
-dist/linux/amd64/kiro-provider-v0.5.6.so
+dist/linux/amd64/kiro-provider-v0.6.1.so
 ```
 
 ## Install
 
-Copy the versioned library into the CPA plugin directory:
+CPA searches both its plugin root and the matching `<GOOS>/<GOARCH>`
+subdirectory. Copy the versioned library using either layout:
 
 ```bash
+# Flat layout, such as the default /CLIProxyAPI/plugins mount:
+cp dist/linux/amd64/kiro-provider-v0.6.1.so plugins/
+
+# Or platform-specific layout:
 mkdir -p plugins/linux/amd64
-cp dist/linux/amd64/kiro-provider-v0.5.6.so plugins/linux/amd64/
+cp dist/linux/amd64/kiro-provider-v0.6.1.so plugins/linux/amd64/
 ```
 
 Enable the plugin in `config.yaml`:
 
-```yaml
-plugins:
-  enabled: true
-  dir: plugins
-  configs:
-    kiro-provider:
-      enabled: true
-      priority: 100
-      import_mode: reference
-      login_mode: kiro-browser
-      sso_region: eu-west-1
-      api_region: us-east-1
-      static_models: []
-```
-
-`sso_region` selects the AWS IAM Identity Center/OIDC endpoint. `api_region`
-selects the Kiro runtime and Amazon Q service endpoints and is independent of
-the SSO region; Kiro currently uses `us-east-1` for these API calls.
-
-To use AWS SSO OIDC device authorization instead:
-
-```yaml
-plugins:
-  configs:
-    kiro-provider:
-      login_mode: aws-device
-      sso_region: eu-west-1
-      sso_start_url: https://example.awsapps.com/start
-```
+Use the complete template and field reference in
+[Plugin configuration](#plugin-configuration). The organization example is
+also suitable for Docker Compose when `dir` matches the container mount.
 
 For Docker Compose, mount the repository's `plugins` directory at
 `/CLIProxyAPI/plugins`, as supported by the standard CPA compose file.
@@ -278,6 +402,79 @@ included. Set `usage_url` only to override the default Kiro service endpoint.
 Plugin metadata uses the official Kiro favicon at
 `https://kiro.dev/favicon.ico`.
 
+### Optional Kiro quota panel
+
+The official CPA `management.html` can load the plugin and start Kiro OAuth,
+but it does not render the plugin-specific quota endpoint. To see Kiro balance,
+credits, reset time, and overage status in **Quota Management**, a customized
+`management.html` is required.
+
+The customization is limited to the Kiro quota adapter, types, translations,
+icon, and tests. It does not modify the OAuth page or CPA core. Build it from
+the sibling `Cli-Proxy-API-Management-Center` source tree.
+
+```bash
+cd ../Cli-Proxy-API-Management-Center
+bun install --frozen-lockfile
+bun run verify
+```
+
+The single-file build is `dist/index.html`. Deploy it as CPA's
+`static/management.html` (or the file selected by `MANAGEMENT_STATIC_PATH`).
+Prevent CPA's automatic updater from replacing the custom build:
+
+```yaml
+remote-management:
+  disable-auto-update-panel: true
+```
+
+For Docker Compose, mount the file into the same static path used by the CPA
+container:
+
+```yaml
+services:
+  cli-proxy-api:
+    environment:
+      MANAGEMENT_STATIC_PATH: /CLIProxyAPI/static/management.html
+    volumes:
+      - ./management.html:/CLIProxyAPI/static/management.html:ro
+```
+
+Copy `dist/index.html` to the host as `management.html`, then recreate only the
+CPA service. The plugin quota endpoint remains usable even when the official
+panel is restored; only the Kiro quota cards disappear.
+
+## Token lifetime, refresh, and re-login
+
+An access token expiring after several hours does **not** mean that the saved
+credential must be deleted. OAuth login stores the access token together with
+its refresh token and, for AWS SSO accounts, the OIDC client ID and secret.
+
+The plugin refreshes automatically:
+
+- CPA schedules a refresh ten minutes before the recorded access-token expiry.
+- Chat, streaming chat, model discovery, profile discovery, and quota lookup
+  refresh before use when the token is missing or close to expiry.
+- A Kiro API response of `401` or `403` triggers one refresh and one retry.
+- Rotated access and refresh tokens are persisted back to the same CPA auth
+  entry, so its file name and auth ID remain stable.
+
+Normal eight-hour access-token expiry therefore needs no manual action and no
+new OAuth login.
+
+Re-login is required only when refresh can no longer succeed, for example when
+the refresh token was revoked, organization access was removed, or the AWS OIDC
+client registration is no longer valid. In that case:
+
+1. Leave the old credential in place.
+2. Start **Kiro OAuth** again and complete authorization.
+3. Verify a model call and quota lookup with the new credential.
+4. Disable or delete the old failed credential afterward.
+
+Deleting the old credential before re-login is unnecessary and removes the
+easy rollback path. The current CPA OAuth flow creates a new auth entry for a
+new AWS client registration; it does not overwrite an unrelated expired entry.
+
 ## Credential behavior
 
 Each imported account becomes a separate `provider=kiro` CPA auth. CPA owns
@@ -325,7 +522,11 @@ responses. All fixture credentials and responses are synthetic.
 2. Run `gofmt`, `go vet ./...`, and `go test ./...` in the pinned Go image.
 3. Build the Linux amd64 `.so` and run the isolated CPA integration suite.
 4. Confirm that test fixtures contain synthetic values only.
-5. Tag the release; do not commit `dist/`, credentials, OAuth callbacks, or
+5. Download the CI artifact and attach the versioned `.so` and its `.sha256`
+   file to the GitHub Release. Publish the optional customized
+   `management.html` as a separate release asset when its Kiro quota adapter
+   matches this plugin release.
+6. Tag the release; do not commit `dist/`, credentials, OAuth callbacks, or
    local CPA configuration.
 
 ## License

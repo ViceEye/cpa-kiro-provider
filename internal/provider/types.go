@@ -9,7 +9,7 @@ import (
 const (
 	providerID    = "kiro"
 	pluginName    = "kiro-provider"
-	pluginVersion = "0.5.6"
+	pluginVersion = "0.6.1"
 	defaultRegion = "us-east-1"
 
 	defaultSSOStartURL    = "https://view.awsapps.com/start"

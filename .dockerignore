@@ -1,0 +1,33 @@
+.git
+.github
+dist
+.codex-tmp*
+
+# Local credentials and CPA state must never enter the build context.
+.env*
+auths
+credentials
+config.yaml
+*.oauth
+*.pem
+*.key
+*.p12
+*.sqlite
+*.sqlite3
+*.db
+
+# Local tooling and build output.
+__pycache__
+*.pyc
+.idea
+.vscode
+.local
+*.log
+*.so
+*.dll
+*.dylib
+*.test
+*.coverprofile
+coverage.out
+.DS_Store
+Thumbs.db

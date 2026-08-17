@@ -55,6 +55,16 @@ func registerManagement() ([]byte, error) {
 				"Description": "Accepts a Kiro browser callback and continues organization sign-in through AWS SSO OIDC.",
 			},
 		},
+		"Resources": []any{
+			map[string]any{
+				"Path":        "oauth",
+				"Description": "Receives the public Kiro browser OAuth callback.",
+			},
+			map[string]any{
+				"Path":        "oauth/signin/callback",
+				"Description": "Receives Kiro callbacks when the sign-in portal appends /signin/callback.",
+			},
+		},
 	})
 }
 
@@ -62,6 +72,9 @@ func handleManagement(raw []byte) ([]byte, error) {
 	var req managementRequest
 	if errUnmarshal := json.Unmarshal(raw, &req); errUnmarshal != nil {
 		return nil, fmt.Errorf("decode Kiro management request: %w", errUnmarshal)
+	}
+	if isBrowserCallbackResourcePath(req.Path) {
+		return handleBrowserCallbackResource(req)
 	}
 	path := normalizeManagementPath(req.Path)
 	if path == "/plugins/kiro-provider/oauth/callback" {
@@ -98,6 +111,11 @@ func handleManagement(raw []byte) ([]byte, error) {
 			"accounts":     accounts,
 		}),
 	})
+}
+
+func isBrowserCallbackResourcePath(value string) bool {
+	path := strings.TrimRight(strings.TrimSpace(value), "/")
+	return path == "/v0/resource/plugins/kiro-provider/oauth" || path == "/v0/resource/plugins/kiro-provider/oauth/signin/callback"
 }
 
 func normalizeManagementPath(value string) string {

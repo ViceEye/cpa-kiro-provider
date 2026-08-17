@@ -12,8 +12,10 @@ RUN /usr/local/go/bin/gofmt -w cmd/kiro-provider/*.go internal/*/*.go \
     && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 /usr/local/go/bin/go build \
        -buildvcs=false -trimpath -buildmode=c-shared \
        -ldflags="-s -w" \
-       -o /out/linux/amd64/kiro-provider-v0.5.6.so ./cmd/kiro-provider \
-    && rm -f /out/linux/amd64/kiro-provider-v0.5.6.h
+       -o /out/linux/amd64/kiro-provider-v0.6.1.so ./cmd/kiro-provider \
+    && rm -f /out/linux/amd64/kiro-provider-v0.6.1.h \
+    && cd /out/linux/amd64 \
+    && sha256sum kiro-provider-v0.6.1.so > kiro-provider-v0.6.1.so.sha256
 
 FROM scratch
 COPY --from=builder /out/ /

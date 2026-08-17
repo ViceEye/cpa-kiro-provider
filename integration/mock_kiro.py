@@ -45,6 +45,8 @@ def account_name(authorization: str) -> str:
         return "account-a"
     if "fake-account-b-access" in authorization:
         return "account-b"
+    if "fake-browser-access" in authorization:
+        return "account-browser"
     return "unknown"
 
 
@@ -130,8 +132,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/refreshToken":
             refresh_token = str(request.get("refreshToken", ""))
-            account = "account-a" if "account-a" in refresh_token else "account-b" if "account-b" in refresh_token else "unknown"
-            access_token = f"fake-{account}-access" if account != "unknown" else "fake-refreshed-access"
+            account = "account-a" if "account-a" in refresh_token else "account-b" if "account-b" in refresh_token else "account-browser" if "browser" in refresh_token else "unknown"
+            access_token = "fake-browser-access" if account == "account-browser" else f"fake-{account}-access" if account != "unknown" else "fake-refreshed-access"
             with LOCK:
                 STATE["refresh_count"] += 1
                 STATE["refresh_accounts"].append(account)
@@ -145,7 +147,11 @@ class Handler(BaseHTTPRequestHandler):
             if (
                 request.get("code") != "fixture-browser-code"
                 or not request.get("code_verifier")
-                or request.get("redirect_uri") != "http://localhost:3128"
+                or request.get("redirect_uri")
+                not in {
+                    "http://localhost:3128",
+                    "http://localhost:8317/v0/resource/plugins/kiro-provider/oauth",
+                }
             ):
                 self._json(400, {"message": "invalid browser token exchange"})
                 return
