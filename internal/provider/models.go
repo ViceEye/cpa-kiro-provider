@@ -1,10 +1,12 @@
-package main
+package provider
 
 import (
 	"encoding/json"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/ViceEye/cpa-kiro-provider/internal/chat"
 )
 
 var fallbackModels = []string{
@@ -33,7 +35,7 @@ func modelInfos(names []string) []modelInfo {
 	seen := make(map[string]struct{})
 	models := make([]modelInfo, 0, len(names))
 	for _, nativeName := range names {
-		nativeName = normalizeModelName(nativeName)
+		nativeName = chat.NormalizeModelName(nativeName)
 		if nativeName == "" {
 			continue
 		}
@@ -62,7 +64,7 @@ func catalogModelInfos(catalog []kiroCatalogModel) []modelInfo {
 	seen := make(map[string]struct{})
 	models := make([]modelInfo, 0, len(catalog))
 	for _, item := range catalog {
-		nativeName := normalizeModelName(item.ModelID)
+		nativeName := chat.NormalizeModelName(item.ModelID)
 		if nativeName == "" {
 			continue
 		}

@@ -1,4 +1,4 @@
-package main
+package provider
 
 import (
 	"encoding/json"
@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
 )
 
 type quotaAccount struct {
@@ -202,7 +204,7 @@ func loadKiroQuotaAccount(account *quotaAccount, callbackID string) error {
 		}
 		account.Usage = append(account.Usage, quotaUsageBreakdown{
 			ResourceType: item.ResourceType,
-			DisplayName:  nonEmpty(item.DisplayName, item.DisplayNamePlural),
+			DisplayName:  jsonx.NonEmpty(item.DisplayName, item.DisplayNamePlural),
 			Unit:         item.Unit, Currency: item.Currency,
 			CurrentUsage: item.CurrentUsage, UsageLimit: item.UsageLimit,
 			Remaining: remaining, UsagePercent: percent,
@@ -219,7 +221,7 @@ func callKiroUsageLimits(cred credential, callbackID, configuredURL string) (hos
 	if errEndpoint != nil {
 		return hostHTTPResponse{}, errEndpoint
 	}
-	clientID := "KiroIDE-0.7.45-" + nonEmpty(strings.TrimSpace(cred.Fingerprint), "unknown")
+	clientID := "KiroIDE-0.7.45-" + jsonx.NonEmpty(strings.TrimSpace(cred.Fingerprint), "unknown")
 	return hostHTTPDoCall(hostHTTPRequest{
 		HostCallbackID: callbackID,
 		Method:         http.MethodGet,
@@ -237,7 +239,7 @@ func callKiroUsageLimits(cred credential, callbackID, configuredURL string) (hos
 }
 
 func kiroUsageEndpoint(configuredURL, region, profileARN string) (string, error) {
-	region = nonEmpty(strings.ToLower(strings.TrimSpace(region)), defaultRegion)
+	region = jsonx.NonEmpty(strings.ToLower(strings.TrimSpace(region)), defaultRegion)
 	fallback := "https://q." + region + ".amazonaws.com/getUsageLimits"
 	endpoint := configuredRegionURL(configuredURL, fallback, region)
 	parsed, errParse := url.Parse(strings.TrimSpace(endpoint))

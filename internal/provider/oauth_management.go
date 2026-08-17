@@ -1,4 +1,4 @@
-package main
+package provider
 
 import (
 	"encoding/json"
@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
 )
 
 type browserCallbackManagementRequest struct {
@@ -88,7 +90,7 @@ func handleBrowserCallbackManagement(req managementRequest) ([]byte, error) {
 	if region == "" {
 		region = defaultRegion
 	}
-	apiRegion := nonEmpty(strings.TrimSpace(session.LoginState.APIRegion), configuredAPIRegion(loadedConfig()))
+	apiRegion := jsonx.NonEmpty(strings.TrimSpace(session.LoginState.APIRegion), configuredAPIRegion(loadedConfig()))
 	deviceState, verificationURL, expiresAt, errDevice := beginDeviceAuthorization(req.HostCallbackID, state, startURL, region, apiRegion)
 	if errDevice != nil {
 		status := pluginHTTPStatus(errDevice)

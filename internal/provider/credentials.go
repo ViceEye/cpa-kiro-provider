@@ -1,4 +1,4 @@
-package main
+package provider
 
 import (
 	"crypto/sha256"
@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
 	_ "modernc.org/sqlite"
 )
 
@@ -72,7 +73,7 @@ func importCredentials(path, mode string) ([]credential, error) {
 			continue
 		}
 		var object map[string]any
-		if json.Unmarshal(raw, &object) == nil && stringValue(object, "clientId") != "" && stringValue(object, "clientSecret") != "" {
+		if json.Unmarshal(raw, &object) == nil && jsonx.String(object, "clientId") != "" && jsonx.String(object, "clientSecret") != "" {
 			registrations[strings.TrimSuffix(filepath.Base(candidate), filepath.Ext(candidate))] = object
 		}
 	}
@@ -90,8 +91,8 @@ func importCredentials(path, mode string) ([]credential, error) {
 		for index := range creds {
 			if creds[index].ClientIDHash != "" && (creds[index].ClientID == "" || creds[index].ClientSecret == "") {
 				if reg := registrations[creds[index].ClientIDHash]; reg != nil {
-					creds[index].ClientID = stringValue(reg, "clientId", "client_id")
-					creds[index].ClientSecret = stringValue(reg, "clientSecret", "client_secret")
+					creds[index].ClientID = jsonx.String(reg, "clientId", "client_id")
+					creds[index].ClientSecret = jsonx.String(reg, "clientSecret", "client_secret")
 				}
 			}
 		}
@@ -174,36 +175,36 @@ func parseCredentialJSON(raw []byte, sourcePath, mode string) ([]credential, err
 }
 
 func credentialFromMap(data map[string]any, sourcePath, sourceKind, mode string) credential {
-	persistedSourcePath := stringValue(data, "source_path")
+	persistedSourcePath := jsonx.String(data, "source_path")
 	if persistedSourcePath == "" {
 		persistedSourcePath = sourcePath
 	}
-	persistedSourceKind := stringValue(data, "source_kind")
+	persistedSourceKind := jsonx.String(data, "source_kind")
 	if persistedSourceKind == "" {
 		persistedSourceKind = sourceKind
 	}
-	persistedMode := stringValue(data, "mode")
+	persistedMode := jsonx.String(data, "mode")
 	if persistedMode == "" {
 		persistedMode = mode
 	}
 	cred := credential{
 		Version:        1,
-		AuthID:         stringValue(data, "authId", "auth_id"),
+		AuthID:         jsonx.String(data, "authId", "auth_id"),
 		Mode:           normalizeMode(persistedMode),
 		SourcePath:     persistedSourcePath,
 		SourceKind:     persistedSourceKind,
-		SourceTokenKey: stringValue(data, "source_token_key"),
-		AccessToken:    stringValue(data, "accessToken", "access_token"),
-		RefreshToken:   stringValue(data, "refreshToken", "refresh_token"),
-		ClientID:       stringValue(data, "clientId", "client_id"),
-		ClientSecret:   stringValue(data, "clientSecret", "client_secret"),
-		ClientIDHash:   stringValue(data, "clientIdHash", "client_id_hash"),
-		ProfileARN:     stringValue(data, "profileArn", "profile_arn", "arn"),
-		SSORegion:      stringValue(data, "ssoRegion", "sso_region", "region"),
-		APIRegion:      stringValue(data, "apiRegion", "api_region"),
+		SourceTokenKey: jsonx.String(data, "source_token_key"),
+		AccessToken:    jsonx.String(data, "accessToken", "access_token"),
+		RefreshToken:   jsonx.String(data, "refreshToken", "refresh_token"),
+		ClientID:       jsonx.String(data, "clientId", "client_id"),
+		ClientSecret:   jsonx.String(data, "clientSecret", "client_secret"),
+		ClientIDHash:   jsonx.String(data, "clientIdHash", "client_id_hash"),
+		ProfileARN:     jsonx.String(data, "profileArn", "profile_arn", "arn"),
+		SSORegion:      jsonx.String(data, "ssoRegion", "sso_region", "region"),
+		APIRegion:      jsonx.String(data, "apiRegion", "api_region"),
 		ExpiresAt:      expiryValue(data, "expiresAt", "expires_at", "expiresIn", "expires_in"),
-		Label:          stringValue(data, "label", "name", "accountName"),
-		Fingerprint:    stringValue(data, "fingerprint"),
+		Label:          jsonx.String(data, "label", "name", "accountName"),
+		Fingerprint:    jsonx.String(data, "fingerprint"),
 	}
 	if scopes, okScopes := data["scopes"].([]any); okScopes {
 		for _, scope := range scopes {
@@ -229,8 +230,8 @@ func resolveSiblingRegistration(cred *credential) {
 	if json.Unmarshal(raw, &registration) != nil {
 		return
 	}
-	cred.ClientID = stringValue(registration, "clientId", "client_id")
-	cred.ClientSecret = stringValue(registration, "clientSecret", "client_secret")
+	cred.ClientID = jsonx.String(registration, "clientId", "client_id")
+	cred.ClientSecret = jsonx.String(registration, "clientSecret", "client_secret")
 	finalizeCredential(cred)
 }
 
@@ -269,10 +270,10 @@ func loadSQLiteCredential(path, mode string) (credential, error) {
 		}
 		var registration map[string]any
 		if json.Unmarshal([]byte(registrationJSON), &registration) == nil {
-			cred.ClientID = stringValue(registration, "clientId", "client_id")
-			cred.ClientSecret = stringValue(registration, "clientSecret", "client_secret")
+			cred.ClientID = jsonx.String(registration, "clientId", "client_id")
+			cred.ClientSecret = jsonx.String(registration, "clientSecret", "client_secret")
 			if cred.SSORegion == "" {
-				cred.SSORegion = stringValue(registration, "region")
+				cred.SSORegion = jsonx.String(registration, "region")
 			}
 		}
 		break
@@ -282,7 +283,7 @@ func loadSQLiteCredential(path, mode string) (credential, error) {
 	if db.QueryRow("SELECT value FROM state WHERE key = 'api.codewhisperer.profile'").Scan(&profileJSON) == nil {
 		var profile map[string]any
 		if json.Unmarshal([]byte(profileJSON), &profile) == nil {
-			if arn := stringValue(profile, "arn"); arn != "" {
+			if arn := jsonx.String(profile, "arn"); arn != "" {
 				cred.ProfileARN = arn
 				if region := regionFromARN(arn); region != "" {
 					cred.APIRegion = region
@@ -471,32 +472,6 @@ func expiryValue(data map[string]any, keys ...string) string {
 				return time.Now().UTC().Add(time.Duration(typed) * time.Second).Format(time.RFC3339)
 			}
 			return strconv.FormatInt(int64(typed), 10)
-		}
-	}
-	return ""
-}
-
-func stringValue(data map[string]any, keys ...string) string {
-	for _, key := range keys {
-		value, exists := data[key]
-		if !exists || value == nil {
-			continue
-		}
-		if text, okText := value.(string); okText {
-			return strings.TrimSpace(text)
-		}
-	}
-	return ""
-}
-
-func textValue(data map[string]any, keys ...string) string {
-	for _, key := range keys {
-		value, exists := data[key]
-		if !exists || value == nil {
-			continue
-		}
-		if text, okText := value.(string); okText {
-			return text
 		}
 	}
 	return ""

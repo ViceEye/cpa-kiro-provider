@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Check formatting
+        run: test -z "$(gofmt -l cmd/kiro-provider/*.go internal/*/*.go)"
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+      - name: Build Linux plugin
+        run: |
+          mkdir -p dist/linux/amd64
+          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+            -buildvcs=false -trimpath -buildmode=c-shared \
+            -ldflags="-s -w" \
+            -o dist/linux/amd64/kiro-provider-v0.5.6.so ./cmd/kiro-provider
+          rm -f dist/linux/amd64/kiro-provider-v0.5.6.h
+          test -s dist/linux/amd64/kiro-provider-v0.5.6.so

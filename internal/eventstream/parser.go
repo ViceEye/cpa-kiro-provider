@@ -1,4 +1,4 @@
-package main
+package eventstream
 
 import (
 	"encoding/binary"
@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"hash/crc32"
 	"strings"
+
+	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
 )
 
-type kiroEvent struct {
+type Event struct {
 	Type       string
 	Content    string
 	ToolUseID  string
@@ -19,7 +21,7 @@ type kiroEvent struct {
 	Message    string
 }
 
-type eventStreamParser struct {
+type Parser struct {
 	buffer          []byte
 	lastContent     string
 	currentToolID   string
@@ -27,9 +29,9 @@ type eventStreamParser struct {
 	currentToolArgs strings.Builder
 }
 
-func (p *eventStreamParser) Feed(chunk []byte) ([]kiroEvent, error) {
+func (p *Parser) Feed(chunk []byte) ([]Event, error) {
 	p.buffer = append(p.buffer, chunk...)
-	var events []kiroEvent
+	var events []Event
 	for {
 		if len(p.buffer) < 12 {
 			break
@@ -66,16 +68,16 @@ func (p *eventStreamParser) Feed(chunk []byte) ([]kiroEvent, error) {
 	return events, nil
 }
 
-func (p *eventStreamParser) Finish() ([]kiroEvent, error) {
+func (p *Parser) Finish() ([]Event, error) {
 	if len(p.buffer) != 0 {
 		return nil, fmt.Errorf("truncated AWS Event Stream frame: %d buffered bytes", len(p.buffer))
 	}
 	if p.currentToolID != "" || p.currentToolName != "" {
-		event := kiroEvent{Type: "tool_stop", ToolUseID: p.currentToolID, ToolName: p.currentToolName, ToolInput: p.currentToolArgs.String()}
+		event := Event{Type: "tool_stop", ToolUseID: p.currentToolID, ToolName: p.currentToolName, ToolInput: p.currentToolArgs.String()}
 		p.currentToolID = ""
 		p.currentToolName = ""
 		p.currentToolArgs.Reset()
-		return []kiroEvent{event}, nil
+		return []Event{event}, nil
 	}
 	return nil, nil
 }
@@ -149,16 +151,16 @@ func parseEventHeaders(raw []byte) (map[string]any, error) {
 	return headers, nil
 }
 
-func (p *eventStreamParser) parsePayload(headers map[string]any, payload []byte) ([]kiroEvent, error) {
+func (p *Parser) parsePayload(headers map[string]any, payload []byte) ([]Event, error) {
 	messageType, _ := headers[":message-type"].(string)
 	if messageType == "exception" || messageType == "error" {
 		var object map[string]any
 		_ = json.Unmarshal(payload, &object)
-		message := stringValue(object, "message", "Message")
+		message := jsonx.String(object, "message", "Message")
 		if message == "" {
 			message = string(payload)
 		}
-		return []kiroEvent{{Type: "error", Message: message}}, nil
+		return []Event{{Type: "error", Message: message}}, nil
 	}
 	if len(payload) == 0 {
 		return nil, nil
@@ -167,56 +169,44 @@ func (p *eventStreamParser) parsePayload(headers map[string]any, payload []byte)
 	if errJSON := json.Unmarshal(payload, &object); errJSON != nil {
 		return nil, fmt.Errorf("decode AWS Event Stream JSON payload: %w", errJSON)
 	}
-	var events []kiroEvent
-	if content := textValue(object, "content"); content != "" && content != p.lastContent {
+	var events []Event
+	if content := jsonx.Text(object, "content"); content != "" && content != p.lastContent {
 		p.lastContent = content
-		events = append(events, kiroEvent{Type: "content", Content: content})
+		events = append(events, Event{Type: "content", Content: content})
 	}
-	if name := stringValue(object, "name"); name != "" {
+	if name := jsonx.String(object, "name"); name != "" {
 		if p.currentToolName != "" {
 			events = append(events, p.finishTool())
 		}
 		p.currentToolName = name
-		p.currentToolID = stringValue(object, "toolUseId")
+		p.currentToolID = jsonx.String(object, "toolUseId")
 		if input, exists := object["input"]; exists {
 			p.currentToolArgs.WriteString(jsonFragment(input))
 		}
-		events = append(events, kiroEvent{Type: "tool_start", ToolUseID: p.currentToolID, ToolName: name})
+		events = append(events, Event{Type: "tool_start", ToolUseID: p.currentToolID, ToolName: name})
 	}
-	if input, exists := object["input"]; exists && stringValue(object, "name") == "" && p.currentToolName != "" {
+	if input, exists := object["input"]; exists && jsonx.String(object, "name") == "" && p.currentToolName != "" {
 		p.currentToolArgs.WriteString(jsonFragment(input))
-		events = append(events, kiroEvent{Type: "tool_input", ToolUseID: p.currentToolID, ToolInput: jsonFragment(input)})
+		events = append(events, Event{Type: "tool_input", ToolUseID: p.currentToolID, ToolInput: jsonFragment(input)})
 	}
 	if stop, _ := object["stop"].(bool); stop && p.currentToolName != "" {
 		events = append(events, p.finishTool())
 	}
-	if usage, okUsage := numberValue(object["usage"]); okUsage {
-		events = append(events, kiroEvent{Type: "usage", Usage: int64(usage)})
+	if usage, okUsage := jsonx.Number(object["usage"]); okUsage {
+		events = append(events, Event{Type: "usage", Usage: int64(usage)})
 	}
-	if contextUse, okContext := numberValue(object["contextUsagePercentage"]); okContext {
-		events = append(events, kiroEvent{Type: "context_usage", ContextUse: contextUse})
+	if contextUse, okContext := jsonx.Number(object["contextUsagePercentage"]); okContext {
+		events = append(events, Event{Type: "context_usage", ContextUse: contextUse})
 	}
 	return events, nil
 }
 
-func (p *eventStreamParser) finishTool() kiroEvent {
-	event := kiroEvent{Type: "tool_stop", ToolUseID: p.currentToolID, ToolName: p.currentToolName, ToolInput: p.currentToolArgs.String()}
+func (p *Parser) finishTool() Event {
+	event := Event{Type: "tool_stop", ToolUseID: p.currentToolID, ToolName: p.currentToolName, ToolInput: p.currentToolArgs.String()}
 	p.currentToolID = ""
 	p.currentToolName = ""
 	p.currentToolArgs.Reset()
 	return event
-}
-
-func numberValue(value any) (float64, bool) {
-	switch typed := value.(type) {
-	case float64:
-		return typed, true
-	case json.Number:
-		parsed, err := typed.Float64()
-		return parsed, err == nil
-	default:
-		return 0, false
-	}
 }
 
 func jsonFragment(value any) string {

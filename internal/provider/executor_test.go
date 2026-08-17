@@ -1,4 +1,4 @@
-package main
+package provider
 
 import (
 	"encoding/json"
@@ -26,7 +26,7 @@ func TestExecuteKiroNonStreamDiscoversProfileBeforePayload(t *testing.T) {
 		if payload["profileArn"] != profileARN {
 			t.Fatalf("runtime payload = %#v", payload)
 		}
-		return hostHTTPResponse{StatusCode: http.StatusOK, Body: eventFrame(t, map[string]any{"content": "ok"})}, nil
+		return hostHTTPResponse{StatusCode: http.StatusOK, Body: responseEventFrame(t, map[string]any{"content": "ok"})}, nil
 	}
 
 	storage, _ := json.Marshal(credential{AccessToken: "fixture-access", RefreshToken: "fixture-refresh", ExpiresAt: time.Now().UTC().Add(time.Hour).Format(time.RFC3339)})

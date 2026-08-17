@@ -10,6 +10,14 @@ The production runtime consists only of CLIProxyAPI and
 `kiro-provider-v0.5.6.so`. Kiro Gateway is the protocol reference and is not a
 sidecar or runtime dependency.
 
+## Unreleased
+
+- Split the native entry point, provider orchestration, chat conversion, Event
+  Stream parser, and shared JSON helpers into focused Go packages.
+- Added GitHub Actions checks for formatting, `go vet`, unit tests, and the
+  Linux amd64 `c-shared` build.
+- Removed the repository-wide `.gitattributes` override.
+
 ## Current release
 
 ### v0.5.6 - 2026-08-17
@@ -106,13 +114,27 @@ saves the credential after the user approves it. No CPA core change is needed.
 authorization-code flow. The Kiro CLI-compatible two-stage portal/device flow
 uses the default `kiro-browser` mode.
 
+## Repository layout
+
+```text
+cmd/kiro-provider/      Native C ABI entry point
+internal/provider/      CPA/Kiro orchestration, OAuth, credentials and quota
+internal/chat/          OpenAI Chat Completions to Kiro request conversion
+internal/eventstream/   AWS Event Stream parser
+internal/jsonx/         Shared JSON value helpers
+internal/provider/testdata/  Synthetic credential fixtures
+integration/            Network-isolated CPA integration suite
+.github/workflows/      GitHub Actions CI
+```
+
 ## Build
 
 Docker Desktop or a Linux Docker engine is required. The build target is
 Linux amd64 with glibc, matching the CPA Debian image.
 
 ```bash
-cd plugins-src/kiro-provider
+git clone https://github.com/ViceEye/cpa-kiro-provider.git
+cd cpa-kiro-provider
 docker build --output type=local,dest=dist .
 ```
 
@@ -275,7 +297,7 @@ All fixtures use fake values and tests perform no real network requests:
 
 ```bash
 docker run --rm -v "$PWD:/src" -w /src golang:1.26-bookworm \
-  sh -c '/usr/local/go/bin/gofmt -w . && /usr/local/go/bin/go test -v ./...'
+  sh -c '/usr/local/go/bin/gofmt -w cmd/kiro-provider/*.go internal/*/*.go && /usr/local/go/bin/go vet ./... && /usr/local/go/bin/go test -v ./...'
 ```
 
 An online smoke test is optional and must use a read-only credential mount.

@@ -1,4 +1,4 @@
-package main
+package provider
 
 import (
 	"crypto/rand"
@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
 )
 
 var deviceLoginPolls = struct {
@@ -72,11 +74,11 @@ func pollLogin(raw []byte) ([]byte, error) {
 	if errUnmarshal := json.Unmarshal(raw, &req); errUnmarshal != nil {
 		return nil, errUnmarshal
 	}
-	mode := strings.ToLower(strings.TrimSpace(stringValue(req.Metadata, "login_mode")))
+	mode := strings.ToLower(strings.TrimSpace(jsonx.String(req.Metadata, "login_mode")))
 	if mode == "organization-browser" {
 		return pollIDCBrowserLoginRequest(req)
 	}
-	if mode == "aws-device" || (mode == "" && stringValue(req.Metadata, "device_code") != "") {
+	if mode == "aws-device" || (mode == "" && jsonx.String(req.Metadata, "device_code") != "") {
 		return pollDeviceLoginRequest(req)
 	}
 	return pollBrowserLoginRequest(req)
@@ -91,7 +93,7 @@ func startIDCBrowserLogin(raw []byte) ([]byte, error) {
 		return errorEnvelope("invalid_provider", "Kiro login received an unexpected provider", false, http.StatusBadRequest), nil
 	}
 	config := loadedConfig()
-	region := nonEmpty(strings.TrimSpace(config.SSORegion), defaultRegion)
+	region := jsonx.NonEmpty(strings.TrimSpace(config.SSORegion), defaultRegion)
 	apiRegion := configuredAPIRegion(config)
 	startURL := strings.TrimRight(strings.TrimSpace(config.SSOStartURL), "/")
 	if startURL == "" || strings.EqualFold(startURL, strings.TrimRight(defaultSSOStartURL, "/")) {
@@ -424,9 +426,9 @@ func startDeviceLogin(raw []byte) ([]byte, error) {
 	}
 
 	config := loadedConfig()
-	region := nonEmpty(strings.TrimSpace(config.SSORegion), defaultRegion)
+	region := jsonx.NonEmpty(strings.TrimSpace(config.SSORegion), defaultRegion)
 	apiRegion := configuredAPIRegion(config)
-	startURL := nonEmpty(strings.TrimSpace(config.SSOStartURL), defaultSSOStartURL)
+	startURL := jsonx.NonEmpty(strings.TrimSpace(config.SSOStartURL), defaultSSOStartURL)
 	state := randomID()
 	loginState, loginURL, expiresAt, errStart := beginDeviceAuthorization(req.HostCallbackID, state, startURL, region, apiRegion)
 	if errStart != nil {
@@ -449,7 +451,7 @@ func beginDeviceAuthorization(callbackID, state, startURL, region, apiRegion str
 	var loginState deviceLoginState
 	startURL = strings.TrimRight(strings.TrimSpace(startURL), "/")
 	region = strings.ToLower(strings.TrimSpace(region))
-	apiRegion = nonEmpty(strings.ToLower(strings.TrimSpace(apiRegion)), defaultRegion)
+	apiRegion = jsonx.NonEmpty(strings.ToLower(strings.TrimSpace(apiRegion)), defaultRegion)
 	if errValidate := validateOrganizationParameters(startURL, region); errValidate != nil {
 		return loginState, "", time.Time{}, errValidate
 	}
@@ -645,7 +647,7 @@ func decodeDeviceLoginState(metadata map[string]any) (deviceLoginState, error) {
 }
 
 func configuredAPIRegion(config pluginConfig) string {
-	return nonEmpty(strings.ToLower(strings.TrimSpace(config.APIRegion)), defaultRegion)
+	return jsonx.NonEmpty(strings.ToLower(strings.TrimSpace(config.APIRegion)), defaultRegion)
 }
 
 func normalizeOIDCErrorCode(body []byte) string {
@@ -653,7 +655,7 @@ func normalizeOIDCErrorCode(body []byte) string {
 	if json.Unmarshal(body, &object) != nil {
 		return ""
 	}
-	value := stringValue(object, "error", "code", "__type")
+	value := jsonx.String(object, "error", "code", "__type")
 	if separator := strings.LastIndexAny(value, "#:"); separator >= 0 {
 		value = value[separator+1:]
 	}

@@ -1,4 +1,4 @@
-package main
+package chat
 
 import (
 	"crypto/sha256"
@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
 )
 
 const maxKiroPayloadBytes = 600000
@@ -57,14 +59,14 @@ type normalizedMessage struct {
 	ToolResults []map[string]any
 }
 
-func buildKiroPayload(raw []byte, requestedModel string, cred credential) ([]byte, string, error) {
+func BuildPayload(raw []byte, requestedModel, profileARN string) ([]byte, string, error) {
 	var request chatRequest
 	if errUnmarshal := json.Unmarshal(raw, &request); errUnmarshal != nil {
 		return nil, "", fmt.Errorf("decode chat-completions request: %w", errUnmarshal)
 	}
-	model := normalizeModelName(request.Model)
+	model := NormalizeModelName(request.Model)
 	if requestedModel != "" {
-		model = normalizeModelName(requestedModel)
+		model = NormalizeModelName(requestedModel)
 	}
 	if model == "" {
 		model = "auto"
@@ -140,14 +142,26 @@ func buildKiroPayload(raw []byte, requestedModel string, cred credential) ([]byt
 		conversationState["history"] = history
 	}
 	payload := map[string]any{"conversationState": conversationState}
-	if cred.ProfileARN != "" {
-		payload["profileArn"] = cred.ProfileARN
+	if profileARN != "" {
+		payload["profileArn"] = profileARN
 	}
 	encoded, errMarshal := marshalKiroPayload(payload, systemPrompt)
 	if errMarshal != nil {
 		return nil, "", errMarshal
 	}
 	return encoded, model, nil
+}
+
+func EstimateTokens(raw []byte) (int, error) {
+	var request chatRequest
+	if errUnmarshal := json.Unmarshal(raw, &request); errUnmarshal != nil {
+		return 0, errUnmarshal
+	}
+	characters := 0
+	for _, message := range request.Messages {
+		characters += len(message.Content)
+	}
+	return (characters + 3) / 4, nil
 }
 
 func marshalKiroPayload(payload map[string]any, systemPrompt string) ([]byte, error) {
@@ -192,7 +206,7 @@ func prependSystemPrompt(state map[string]any, history []any, systemPrompt strin
 		input, _ = current["userInputMessage"].(map[string]any)
 	}
 	if input != nil {
-		input["content"] = systemPrompt + "\n\n" + nonEmpty(stringValue(input, "content"), "(empty placeholder)")
+		input["content"] = systemPrompt + "\n\n" + jsonx.NonEmpty(jsonx.String(input, "content"), "(empty placeholder)")
 	}
 }
 
@@ -248,7 +262,7 @@ func normalizeConversation(messages []normalizedMessage) []normalizedMessage {
 
 func kiroHistoryMessage(message normalizedMessage, model string) map[string]any {
 	if message.Role == "assistant" {
-		response := map[string]any{"content": nonEmpty(message.Text, "(empty placeholder)")}
+		response := map[string]any{"content": jsonx.NonEmpty(message.Text, "(empty placeholder)")}
 		if len(message.ToolUses) > 0 {
 			response["toolUses"] = message.ToolUses
 		}
@@ -259,7 +273,7 @@ func kiroHistoryMessage(message normalizedMessage, model string) map[string]any 
 
 func kiroUserInput(message normalizedMessage, model string) map[string]any {
 	input := map[string]any{
-		"content": nonEmpty(message.Text, "(empty placeholder)"),
+		"content": jsonx.NonEmpty(message.Text, "(empty placeholder)"),
 		"modelId": model,
 		"origin":  "AI_EDITOR",
 	}
@@ -288,21 +302,21 @@ func extractMessageContent(raw json.RawMessage) (string, []map[string]any, []map
 	var images []map[string]any
 	var toolResults []map[string]any
 	for _, block := range blocks {
-		switch strings.ToLower(stringValue(block, "type")) {
+		switch strings.ToLower(jsonx.String(block, "type")) {
 		case "text", "input_text", "output_text":
-			if value := textValue(block, "text"); value != "" {
+			if value := jsonx.Text(block, "text"); value != "" {
 				textParts = append(textParts, value)
 			}
 		case "image_url":
 			if imageURL, okURL := block["image_url"].(map[string]any); okURL {
-				if image := convertImageURL(stringValue(imageURL, "url")); image != nil {
+				if image := convertImageURL(jsonx.String(imageURL, "url")); image != nil {
 					images = append(images, image)
 				}
 			}
 		case "image":
 			if source, okSource := block["source"].(map[string]any); okSource {
-				data := stringValue(source, "data")
-				mediaType := stringValue(source, "media_type")
+				data := jsonx.String(source, "data")
+				mediaType := jsonx.String(source, "media_type")
 				if data != "" {
 					images = append(images, map[string]any{"format": imageFormat(mediaType), "source": map[string]any{"bytes": data}})
 				}
@@ -311,9 +325,9 @@ func extractMessageContent(raw json.RawMessage) (string, []map[string]any, []map
 			content := block["content"]
 			contentText := contentToText(content)
 			toolResults = append(toolResults, map[string]any{
-				"content":   []any{map[string]any{"text": nonEmpty(contentText, "(empty result)")}},
+				"content":   []any{map[string]any{"text": jsonx.NonEmpty(contentText, "(empty result)")}},
 				"status":    "success",
-				"toolUseId": stringValue(block, "tool_use_id", "tool_call_id"),
+				"toolUseId": jsonx.String(block, "tool_use_id", "tool_call_id"),
 			})
 		}
 	}
@@ -408,7 +422,7 @@ func contentToText(value any) string {
 		var parts []string
 		for _, item := range typed {
 			if object, okObject := item.(map[string]any); okObject {
-				if text := textValue(object, "text", "content"); text != "" {
+				if text := jsonx.Text(object, "text", "content"); text != "" {
 					parts = append(parts, text)
 				}
 			}
@@ -432,7 +446,7 @@ var (
 	legacyModelPattern   = regexp.MustCompile(`^claude-(\d+)-(\d+)-(haiku|sonnet|opus)(?:-(?:\d{8}|latest|\d+))?$`)
 )
 
-func normalizeModelName(name string) string {
+func NormalizeModelName(name string) string {
 	name = strings.TrimSpace(strings.TrimPrefix(name, "kiro/"))
 	name = regexp.MustCompile(`\[\d+[mk]\]$`).ReplaceAllString(strings.ToLower(name), "")
 	if match := standardModelPattern.FindStringSubmatch(name); len(match) > 0 {
@@ -445,11 +459,4 @@ func normalizeModelName(name string) string {
 		return "claude-" + match[1] + "." + match[2] + "-" + match[3]
 	}
 	return name
-}
-
-func nonEmpty(value, fallback string) string {
-	if strings.TrimSpace(value) == "" {
-		return fallback
-	}
-	return value
 }

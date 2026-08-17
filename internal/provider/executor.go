@@ -1,10 +1,14 @@
-package main
+package provider
 
 import (
 	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/ViceEye/cpa-kiro-provider/internal/chat"
+	"github.com/ViceEye/cpa-kiro-provider/internal/eventstream"
+	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
 )
 
 type completionAccumulator struct {
@@ -61,7 +65,7 @@ func executeKiroNonStream(req executorRequest) ([]byte, credential, string, host
 	if discovered {
 		persistCredentialBestEffort(req.AuthID, cred)
 	}
-	payload, model, errPayload := buildKiroPayload(req.Payload, req.Model, cred)
+	payload, model, errPayload := chat.BuildPayload(req.Payload, req.Model, cred.ProfileARN)
 	if errPayload != nil {
 		return nil, cred, model, hostHTTPResponse{}, statusError{Code: "invalid_request", Message: errPayload.Error(), HTTPStatus: http.StatusBadRequest}
 	}
@@ -145,7 +149,7 @@ func prepareKiroStream(req executorRequest) (hostHTTPStreamResponse, string, err
 	if discovered {
 		persistCredentialBestEffort(req.AuthID, cred)
 	}
-	payload, model, errPayload := buildKiroPayload(req.Payload, req.Model, cred)
+	payload, model, errPayload := chat.BuildPayload(req.Payload, req.Model, cred.ProfileARN)
 	if errPayload != nil {
 		return hostHTTPStreamResponse{}, model, statusError{Code: "invalid_request", Message: errPayload.Error(), HTTPStatus: http.StatusBadRequest}
 	}
@@ -179,7 +183,7 @@ func prepareKiroStream(req executorRequest) (hostHTTPStreamResponse, string, err
 
 func consumeKiroStream(streamID string, response hostHTTPStreamResponse, model string) error {
 	defer closeHostHTTPStream(response.StreamID)
-	parser := &eventStreamParser{}
+	parser := &eventstream.Parser{}
 	acc := newCompletionAccumulator(model)
 	for {
 		chunk, errRead := readHostHTTPStreamCall(response.StreamID)
@@ -193,7 +197,7 @@ func consumeKiroStream(streamID string, response hostHTTPStreamResponse, model s
 			}
 			for _, event := range events {
 				if event.Type == "error" {
-					return statusError{Code: "upstream_stream_error", Message: nonEmpty(event.Message, "Kiro stream returned an error"), Retryable: true, HTTPStatus: http.StatusBadGateway}
+					return statusError{Code: "upstream_stream_error", Message: jsonx.NonEmpty(event.Message, "Kiro stream returned an error"), Retryable: true, HTTPStatus: http.StatusBadGateway}
 				}
 				for _, frame := range acc.streamFrames(event) {
 					if errEmit := emitPluginStream(streamID, frame); errEmit != nil {
@@ -238,13 +242,13 @@ func openKiroStream(cred credential, payload []byte, callbackID string) (hostHTT
 }
 
 func runtimeEndpoint(cred credential) string {
-	fallback := "https://runtime." + nonEmpty(cred.APIRegion, defaultRegion) + ".kiro.dev"
+	fallback := "https://runtime." + jsonx.NonEmpty(cred.APIRegion, defaultRegion) + ".kiro.dev"
 	baseURL := strings.TrimRight(configuredRegionURL(loadedConfig().RuntimeBaseURL, fallback, cred.APIRegion), "/")
 	return baseURL + "/generateAssistantResponse"
 }
 
 func kiroHeaders(cred credential) http.Header {
-	fingerprint := nonEmpty(cred.Fingerprint, "default-kiro-provider")
+	fingerprint := jsonx.NonEmpty(cred.Fingerprint, "default-kiro-provider")
 	return http.Header{
 		"Authorization":               []string{"Bearer " + cred.AccessToken},
 		"Content-Type":                []string{"application/x-amz-json-1.0"},
@@ -259,7 +263,7 @@ func kiroHeaders(cred credential) http.Header {
 }
 
 func convertNonStreamResponse(raw []byte, model string) ([]byte, error) {
-	parser := &eventStreamParser{}
+	parser := &eventstream.Parser{}
 	events, errParse := parser.Feed(raw)
 	if errParse != nil {
 		return nil, statusError{Code: "invalid_event_stream", Message: errParse.Error(), Retryable: true, HTTPStatus: http.StatusBadGateway}
@@ -294,7 +298,7 @@ func newCompletionAccumulator(model string) *completionAccumulator {
 	return &completionAccumulator{ID: "chatcmpl-" + strings.ReplaceAll(randomID(), "-", ""), Model: model, toolIndex: make(map[string]int)}
 }
 
-func (a *completionAccumulator) apply(event kiroEvent) {
+func (a *completionAccumulator) apply(event eventstream.Event) {
 	switch event.Type {
 	case "content":
 		a.Content.WriteString(event.Content)
@@ -315,7 +319,7 @@ func (a *completionAccumulator) apply(event kiroEvent) {
 	}
 }
 
-func (a *completionAccumulator) streamFrames(event kiroEvent) [][]byte {
+func (a *completionAccumulator) streamFrames(event eventstream.Event) [][]byte {
 	a.apply(event)
 	delta := map[string]any{}
 	switch event.Type {
@@ -379,13 +383,7 @@ func countTokens(raw []byte) ([]byte, error) {
 	if errUnmarshal := json.Unmarshal(raw, &req); errUnmarshal != nil {
 		return nil, errUnmarshal
 	}
-	var request chatRequest
-	_ = json.Unmarshal(req.Payload, &request)
-	characters := 0
-	for _, message := range request.Messages {
-		characters += len(message.Content)
-	}
-	estimate := (characters + 3) / 4
+	estimate, _ := chat.EstimateTokens(req.Payload)
 	body, _ := json.Marshal(map[string]any{"total_tokens": estimate})
 	return okEnvelope(executorResponse{Payload: body, Headers: http.Header{"Content-Type": []string{"application/json"}}})
 }

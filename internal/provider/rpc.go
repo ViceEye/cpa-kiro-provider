@@ -1,9 +1,10 @@
-package main
+package provider
 
 import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -18,8 +19,14 @@ var (
 	hostHTTPDoCall         = hostHTTPDo
 	hostHTTPDoStreamCall   = hostHTTPDoStream
 	readHostHTTPStreamCall = readHostHTTPStream
-	callHostCall           = callHost
+	callHostCall           = func(string, any) (json.RawMessage, error) { return nil, errors.New("host callback is unavailable") }
 )
+
+func SetHostCaller(caller func(string, any) (json.RawMessage, error)) {
+	if caller != nil {
+		callHostCall = caller
+	}
+}
 
 func init() {
 	configValue.Store(pluginConfig{ImportMode: "reference", LoginMode: defaultLoginMode, ModelPrefix: "kiro/"})
@@ -159,7 +166,7 @@ func executeCommandLine(raw []byte) ([]byte, error) {
 }
 
 func hostHTTPDo(req hostHTTPRequest) (hostHTTPResponse, error) {
-	result, errCall := callHost("host.http.do", req)
+	result, errCall := callHostCall("host.http.do", req)
 	if errCall != nil {
 		return hostHTTPResponse{}, errCall
 	}
@@ -171,7 +178,7 @@ func hostHTTPDo(req hostHTTPRequest) (hostHTTPResponse, error) {
 }
 
 func hostHTTPDoStream(req hostHTTPRequest) (hostHTTPStreamResponse, error) {
-	result, errCall := callHost("host.http.do_stream", req)
+	result, errCall := callHostCall("host.http.do_stream", req)
 	if errCall != nil {
 		return hostHTTPStreamResponse{}, errCall
 	}
@@ -183,7 +190,7 @@ func hostHTTPDoStream(req hostHTTPRequest) (hostHTTPStreamResponse, error) {
 }
 
 func readHostHTTPStream(streamID string) (hostHTTPStreamReadResponse, error) {
-	result, errCall := callHost("host.http.stream_read", map[string]string{"stream_id": streamID})
+	result, errCall := callHostCall("host.http.stream_read", map[string]string{"stream_id": streamID})
 	if errCall != nil {
 		return hostHTTPStreamReadResponse{}, errCall
 	}
@@ -215,16 +222,16 @@ func closeHostHTTPStream(streamID string) {
 	if streamID == "" {
 		return
 	}
-	_, _ = callHost("host.http.stream_close", map[string]string{"stream_id": streamID})
+	_, _ = callHostCall("host.http.stream_close", map[string]string{"stream_id": streamID})
 }
 
 func emitPluginStream(streamID string, payload []byte) error {
-	_, errCall := callHost("host.stream.emit", map[string]any{"stream_id": streamID, "payload": payload})
+	_, errCall := callHostCall("host.stream.emit", map[string]any{"stream_id": streamID, "payload": payload})
 	return errCall
 }
 
 func closePluginStream(streamID, errorMessage string) {
-	_, _ = callHost("host.stream.close", map[string]any{"stream_id": streamID, "error": errorMessage})
+	_, _ = callHostCall("host.stream.close", map[string]any{"stream_id": streamID, "error": errorMessage})
 }
 
 func okEnvelope(value any) ([]byte, error) {

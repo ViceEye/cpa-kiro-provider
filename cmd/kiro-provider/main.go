@@ -60,6 +60,8 @@ import (
 	"fmt"
 	"net/http"
 	"unsafe"
+
+	"github.com/ViceEye/cpa-kiro-provider/internal/provider"
 )
 
 const abiVersion uint32 = 1
@@ -72,6 +74,7 @@ func cliproxy_plugin_init(host *C.cliproxy_host_api, plugin *C.cliproxy_plugin_a
 		return 1
 	}
 	C.store_host_api(host)
+	provider.SetHostCaller(callHost)
 	plugin.abi_version = C.uint32_t(abiVersion)
 	plugin.call = C.cliproxy_plugin_call_fn(C.cliproxyPluginCall)
 	plugin.free_buffer = C.cliproxy_plugin_free_fn(C.cliproxyPluginFree)
@@ -86,16 +89,16 @@ func cliproxyPluginCall(method *C.char, request *C.uint8_t, requestLen C.size_t,
 		response.len = 0
 	}
 	if method == nil {
-		writeResponse(response, errorEnvelope("invalid_method", "method is required", false, http.StatusBadRequest))
+		writeResponse(response, provider.ErrorEnvelope("invalid_method", "method is required", false, http.StatusBadRequest))
 		return 1
 	}
 	var rawRequest []byte
 	if request != nil && requestLen > 0 {
 		rawRequest = C.GoBytes(unsafe.Pointer(request), C.int(requestLen))
 	}
-	raw, errHandle := handleMethod(C.GoString(method), rawRequest)
+	raw, errHandle := provider.HandleMethod(C.GoString(method), rawRequest)
 	if errHandle != nil {
-		writeResponse(response, errorEnvelope("plugin_error", errHandle.Error(), false, http.StatusInternalServerError))
+		writeResponse(response, provider.ErrorEnvelope("plugin_error", errHandle.Error(), false, http.StatusInternalServerError))
 		return 1
 	}
 	writeResponse(response, raw)
@@ -112,48 +115,6 @@ func cliproxyPluginFree(ptr unsafe.Pointer, length C.size_t) {
 
 //export cliproxyPluginShutdown
 func cliproxyPluginShutdown() {}
-
-func handleMethod(method string, raw []byte) ([]byte, error) {
-	switch method {
-	case "plugin.register", "plugin.reconfigure":
-		return registration(raw)
-	case "auth.identifier", "executor.identifier":
-		return okEnvelope(map[string]string{"identifier": providerID})
-	case "auth.parse":
-		return parseAuth(raw)
-	case "auth.refresh":
-		return refreshAuth(raw)
-	case "auth.login.start":
-		return startLogin(raw)
-	case "auth.login.poll":
-		return pollLogin(raw)
-	case "model.static":
-		return okEnvelope(modelResponse{Provider: providerID, Models: staticModels()})
-	case "model.for_auth":
-		return modelsForAuth(raw)
-	case "executor.execute":
-		return executeRequest(raw)
-	case "executor.execute_stream":
-		return executeStream(raw)
-	case "executor.count_tokens":
-		return countTokens(raw)
-	case "executor.http_request":
-		return executorHTTPRequest(raw)
-	case "command_line.register":
-		return okEnvelope(map[string]any{"Flags": []any{
-			map[string]any{"Name": "kiro-import", "Usage": "Import Kiro IDE, kiro-cli, Amazon Q, or AWS SSO credentials", "Type": "string"},
-			map[string]any{"Name": "kiro-import-mode", "Usage": "Kiro credential ownership mode: reference or copy", "Type": "string", "DefaultValue": "reference"},
-		}})
-	case "command_line.execute":
-		return executeCommandLine(raw)
-	case "management.register":
-		return registerManagement()
-	case "management.handle":
-		return handleManagement(raw)
-	default:
-		return errorEnvelope("unknown_method", "unknown method: "+method, false, http.StatusNotFound), nil
-	}
-}
 
 func callHost(method string, payload any) (json.RawMessage, error) {
 	rawPayload, errMarshal := json.Marshal(payload)
@@ -183,7 +144,14 @@ func callHost(method string, payload any) (json.RawMessage, error) {
 	if len(rawResponse) == 0 {
 		return nil, fmt.Errorf("host callback %s returned no response, code=%d", method, int(callCode))
 	}
-	var env envelope
+	var env struct {
+		OK     bool            `json:"ok"`
+		Result json.RawMessage `json:"result"`
+		Error  *struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
 	if errJSON := json.Unmarshal(rawResponse, &env); errJSON != nil {
 		return nil, fmt.Errorf("decode host callback %s: %w", method, errJSON)
 	}

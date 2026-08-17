@@ -1,4 +1,4 @@
-package main
+package chat
 
 import (
 	"encoding/json"
@@ -18,7 +18,7 @@ func TestBuildKiroPayloadWithHistoryImageAndTools(t *testing.T) {
       ],
       "tools":[{"type":"function","function":{"name":"lookup","description":"Lookup data","parameters":{"type":"object","properties":{"q":{"type":"string"}}}}}]
     }`)
-	payload, model, errBuild := buildKiroPayload(raw, "kiro/claude-sonnet-4-5-20250514", credential{ProfileARN: "arn:fake"})
+	payload, model, errBuild := BuildPayload(raw, "kiro/claude-sonnet-4-5-20250514", "arn:fake")
 	if errBuild != nil {
 		t.Fatalf("buildKiroPayload() error = %v", errBuild)
 	}
@@ -73,7 +73,7 @@ func TestNormalizeConversationRepairsRoles(t *testing.T) {
 func TestNormalizeModelName(t *testing.T) {
 	cases := map[string]string{"kiro/claude-haiku-4-5": "claude-haiku-4.5", "claude-3-7-sonnet-20250219": "claude-3.7-sonnet", "auto": "auto"}
 	for input, want := range cases {
-		if got := normalizeModelName(input); got != want {
+		if got := NormalizeModelName(input); got != want {
 			t.Errorf("normalizeModelName(%q) = %q, want %q", input, got, want)
 		}
 	}
@@ -95,7 +95,7 @@ func TestBuildKiroPayloadTrimsOversizedHistory(t *testing.T) {
 	request.Messages = append(request.Messages, chatMessage{Role: "user", Content: current})
 	raw, _ := json.Marshal(request)
 
-	payload, _, errBuild := buildKiroPayload(raw, request.Model, credential{ProfileARN: "arn:fake"})
+	payload, _, errBuild := BuildPayload(raw, request.Model, "arn:fake")
 	if errBuild != nil {
 		t.Fatalf("buildKiroPayload() error = %v", errBuild)
 	}

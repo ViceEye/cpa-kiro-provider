@@ -1,4 +1,4 @@
-package main
+package provider
 
 import (
 	"encoding/json"
@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
 )
 
 func parseAuth(raw []byte) ([]byte, error) {
@@ -95,7 +97,7 @@ func refreshCredential(current credential, callbackID string) (credential, error
 		if cred.ClientID == "" || cred.ClientSecret == "" {
 			return credential{}, statusError{Code: "missing_oidc_registration", Message: "Kiro AWS SSO client ID or client secret is missing", HTTPStatus: http.StatusUnauthorized}
 		}
-		endpoint = configuredRegionURL(loadedConfig().OIDCRefreshURL, fmt.Sprintf("https://oidc.%s.amazonaws.com/token", nonEmpty(cred.SSORegion, defaultRegion)), cred.SSORegion)
+		endpoint = configuredRegionURL(loadedConfig().OIDCRefreshURL, fmt.Sprintf("https://oidc.%s.amazonaws.com/token", jsonx.NonEmpty(cred.SSORegion, defaultRegion)), cred.SSORegion)
 		body, _ = json.Marshal(map[string]any{
 			"grantType":    "refresh_token",
 			"clientId":     cred.ClientID,
@@ -104,7 +106,7 @@ func refreshCredential(current credential, callbackID string) (credential, error
 		})
 		headers = http.Header{"Content-Type": []string{"application/json"}}
 	} else {
-		endpoint = configuredRegionURL(loadedConfig().DesktopRefreshURL, fmt.Sprintf("https://prod.%s.auth.desktop.kiro.dev/refreshToken", nonEmpty(cred.SSORegion, defaultRegion)), cred.SSORegion)
+		endpoint = configuredRegionURL(loadedConfig().DesktopRefreshURL, fmt.Sprintf("https://prod.%s.auth.desktop.kiro.dev/refreshToken", jsonx.NonEmpty(cred.SSORegion, defaultRegion)), cred.SSORegion)
 		body, _ = json.Marshal(map[string]string{"refreshToken": cred.RefreshToken})
 		headers = http.Header{
 			"Content-Type": []string{"application/json"},
@@ -122,19 +124,19 @@ func refreshCredential(current credential, callbackID string) (credential, error
 	if errJSON := json.Unmarshal(resp.Body, &result); errJSON != nil {
 		return credential{}, statusError{Code: "invalid_refresh_response", Message: "Kiro token refresh returned invalid JSON", Retryable: true, HTTPStatus: http.StatusBadGateway, Cause: errJSON}
 	}
-	accessToken := stringValue(result, "accessToken", "access_token")
+	accessToken := jsonx.String(result, "accessToken", "access_token")
 	if accessToken == "" {
 		return credential{}, statusError{Code: "missing_access_token", Message: "Kiro token refresh response did not contain an access token", Retryable: true, HTTPStatus: http.StatusBadGateway}
 	}
 	cred.AccessToken = accessToken
-	if refreshToken := stringValue(result, "refreshToken", "refresh_token"); refreshToken != "" {
+	if refreshToken := jsonx.String(result, "refreshToken", "refresh_token"); refreshToken != "" {
 		cred.RefreshToken = refreshToken
 	}
-	if profileARN := stringValue(result, "profileArn", "profile_arn"); profileARN != "" {
+	if profileARN := jsonx.String(result, "profileArn", "profile_arn"); profileARN != "" {
 		cred.ProfileARN = profileARN
 	}
 	expiresIn := int64(3600)
-	if number, okNumber := numberValue(result["expiresIn"]); okNumber && number > 0 {
+	if number, okNumber := jsonx.Number(result["expiresIn"]); okNumber && number > 0 {
 		expiresIn = int64(number)
 	}
 	cred.ExpiresAt = time.Now().UTC().Add(time.Duration(expiresIn-60) * time.Second).Format(time.RFC3339)
@@ -147,7 +149,7 @@ func configuredRegionURL(configured, fallback, region string) string {
 	if configured == "" {
 		return fallback
 	}
-	return strings.ReplaceAll(configured, "{region}", nonEmpty(region, defaultRegion))
+	return strings.ReplaceAll(configured, "{region}", jsonx.NonEmpty(region, defaultRegion))
 }
 
 func decodeCredential(raw []byte) (credential, error) {
@@ -189,7 +191,7 @@ func upstreamStatusError(prefix string, status int, body []byte) statusError {
 	message := prefix
 	var object map[string]any
 	if json.Unmarshal(body, &object) == nil {
-		if detail := stringValue(object, "message", "error_description", "error"); detail != "" {
+		if detail := jsonx.String(object, "message", "error_description", "error"); detail != "" {
 			message += ": " + detail
 		}
 	}

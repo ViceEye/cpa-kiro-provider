@@ -1,14 +1,16 @@
-package main
+package provider
 
 import (
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
 )
 
 func kiroServiceEndpoint(configured, region string) string {
-	region = nonEmpty(region, defaultRegion)
+	region = jsonx.NonEmpty(region, defaultRegion)
 	fallback := "https://q." + region + ".amazonaws.com/"
 	endpoint := configuredRegionURL(configured, fallback, region)
 	if !strings.HasSuffix(endpoint, "/") {
@@ -79,7 +81,7 @@ func ensureProfileARN(cred credential, callbackID string) (credential, bool, err
 		}
 	}
 	for _, profile := range result.Profiles {
-		if arn := stringValue(profile, "arn", "profileArn", "profile_arn"); arn != "" {
+		if arn := jsonx.String(profile, "arn", "profileArn", "profile_arn"); arn != "" {
 			cred.ProfileARN = arn
 			finalizeCredential(&cred)
 			return cred, true, nil

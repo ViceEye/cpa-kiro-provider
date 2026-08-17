@@ -1,34 +1,12 @@
-package main
+package eventstream
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"hash/crc32"
+	"strings"
 	"testing"
 )
-
-func TestCompletionStreamFramesAreCanonicalJSON(t *testing.T) {
-	acc := newCompletionAccumulator("fixture-model")
-	frames := acc.streamFrames(kiroEvent{Type: "content", Content: "hello"})
-	if len(frames) != 1 {
-		t.Fatalf("stream frame count = %d", len(frames))
-	}
-	if bytes.HasPrefix(frames[0], []byte("data:")) || bytes.Contains(frames[0], []byte("[DONE]")) {
-		t.Fatalf("plugin emitted HTTP SSE framing: %q", frames[0])
-	}
-	var object map[string]any
-	if err := json.Unmarshal(frames[0], &object); err != nil {
-		t.Fatalf("stream frame is not JSON: %v", err)
-	}
-	if object["object"] != "chat.completion.chunk" {
-		t.Fatalf("stream object = %#v", object["object"])
-	}
-	finish := acc.finishFrame()
-	if bytes.HasPrefix(finish, []byte("data:")) || !json.Valid(finish) {
-		t.Fatalf("finish frame is not canonical JSON: %q", finish)
-	}
-}
 
 func TestEventStreamFragmentationToolsAndUsage(t *testing.T) {
 	stream := append(eventFrame(t, map[string]any{"content": "hello "}), eventFrame(t, map[string]any{"content": "world"})...)
@@ -37,8 +15,8 @@ func TestEventStreamFragmentationToolsAndUsage(t *testing.T) {
 	stream = append(stream, eventFrame(t, map[string]any{"input": "\"test\"}"})...)
 	stream = append(stream, eventFrame(t, map[string]any{"stop": true})...)
 	stream = append(stream, eventFrame(t, map[string]any{"usage": 3, "contextUsagePercentage": 12.5})...)
-	parser := &eventStreamParser{}
-	var events []kiroEvent
+	parser := &Parser{}
+	var events []Event
 	for offset := 0; offset < len(stream); {
 		size := 1 + offset%11
 		if offset+size > len(stream) {
@@ -56,16 +34,27 @@ func TestEventStreamFragmentationToolsAndUsage(t *testing.T) {
 		t.Fatal(errFinish)
 	}
 	events = append(events, tail...)
-	acc := newCompletionAccumulator("claude-sonnet-4.5")
+	var content strings.Builder
+	var toolInput string
+	var usage int64
+	var contextUse float64
 	for _, event := range events {
-		acc.apply(event)
+		switch event.Type {
+		case "content":
+			content.WriteString(event.Content)
+		case "tool_stop":
+			toolInput = event.ToolInput
+		case "usage":
+			usage = event.Usage
+		case "context_usage":
+			contextUse = event.ContextUse
+		}
 	}
-	if acc.Content.String() != "hello world" || len(acc.ToolCalls) != 1 || acc.Usage != 3 || acc.ContextUse != 12.5 {
-		t.Fatalf("accumulator = %#v content=%q", acc, acc.Content.String())
+	if content.String() != "hello world" || usage != 3 || contextUse != 12.5 {
+		t.Fatalf("content=%q usage=%d context=%v", content.String(), usage, contextUse)
 	}
-	function := acc.ToolCalls[0]["function"].(map[string]any)
-	if function["arguments"] != `{"q":"test"}` {
-		t.Fatalf("tool arguments = %#v", function["arguments"])
+	if toolInput != `{"q":"test"}` {
+		t.Fatalf("tool arguments = %q", toolInput)
 	}
 }
 
@@ -73,32 +62,15 @@ func TestEventStreamRejectsCorruptAndTruncatedFrames(t *testing.T) {
 	frame := eventFrame(t, map[string]any{"content": "hello"})
 	corrupt := append([]byte(nil), frame...)
 	corrupt[len(corrupt)-5] ^= 0xff
-	if _, errFeed := (&eventStreamParser{}).Feed(corrupt); errFeed == nil {
+	if _, errFeed := (&Parser{}).Feed(corrupt); errFeed == nil {
 		t.Fatal("corrupt CRC was accepted")
 	}
-	parser := &eventStreamParser{}
+	parser := &Parser{}
 	if _, errFeed := parser.Feed(frame[:len(frame)-1]); errFeed != nil {
 		t.Fatalf("partial frame rejected too early: %v", errFeed)
 	}
 	if _, errFinish := parser.Finish(); errFinish == nil {
 		t.Fatal("truncated frame was accepted")
-	}
-}
-
-func TestConvertNonStreamResponse(t *testing.T) {
-	raw := append(eventFrame(t, map[string]any{"content": "answer"}), eventFrame(t, map[string]any{"usage": 2})...)
-	response, errConvert := convertNonStreamResponse(raw, "claude-sonnet-4.5")
-	if errConvert != nil {
-		t.Fatalf("convertNonStreamResponse() error = %v", errConvert)
-	}
-	var object map[string]any
-	if json.Unmarshal(response, &object) != nil {
-		t.Fatalf("invalid JSON response: %s", response)
-	}
-	choices := object["choices"].([]any)
-	message := choices[0].(map[string]any)["message"].(map[string]any)
-	if message["content"] != "answer" {
-		t.Fatalf("content = %#v", message["content"])
 	}
 }
 
