@@ -3,8 +3,14 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing v<version> tag to package and publish
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -12,12 +18,35 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag != '' && inputs.release_tag || github.ref }}
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
+      - name: Resolve version
+        id: version
+        env:
+          REQUESTED_RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          version="$(sed -n 's/.*pluginVersion = "\([^"]*\)".*/\1/p' internal/provider/types.go)"
+          test -n "$version"
+          [[ "$version" =~ ^[0-9]+(\.[0-9]+)+$ ]]
+          release_tag="$REQUESTED_RELEASE_TAG"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            release_tag="$GITHUB_REF_NAME"
+          fi
+          if [[ -n "$release_tag" && "$release_tag" != "v$version" ]]; then
+            echo "release tag $release_tag does not match plugin version $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
       - name: Check formatting
         run: test -z "$(gofmt -l cmd/kiro-provider/*.go internal/*/*.go)"
       - name: Vet
@@ -25,19 +54,46 @@ jobs:
       - name: Test
         run: go test ./...
       - name: Build Linux plugin
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          mkdir -p dist/linux/amd64
+          mkdir -p dist/linux/amd64 dist/package dist/release
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
             -buildvcs=false -trimpath -buildmode=c-shared \
             -ldflags="-s -w" \
-            -o dist/linux/amd64/kiro-provider-v0.6.1.so ./cmd/kiro-provider
-          rm -f dist/linux/amd64/kiro-provider-v0.6.1.h
-          test -s dist/linux/amd64/kiro-provider-v0.6.1.so
-          cd dist/linux/amd64
-          sha256sum kiro-provider-v0.6.1.so > kiro-provider-v0.6.1.so.sha256
-      - name: Upload Linux plugin
+            -o "dist/linux/amd64/kiro-provider-v${VERSION}.so" ./cmd/kiro-provider
+          rm -f "dist/linux/amd64/kiro-provider-v${VERSION}.h"
+          test -s "dist/linux/amd64/kiro-provider-v${VERSION}.so"
+          cp "dist/linux/amd64/kiro-provider-v${VERSION}.so" dist/package/kiro-provider.so
+          archive="kiro-provider_${VERSION}_linux_amd64.zip"
+          (cd dist/package && zip -9 "../release/${archive}" kiro-provider.so)
+          (cd dist/release && sha256sum "$archive" > checksums.txt)
+          test "$(unzip -Z1 "dist/release/${archive}")" = "kiro-provider.so"
+          (cd dist/release && sha256sum -c checksums.txt)
+      - name: Upload release assets
         uses: actions/upload-artifact@v4
         with:
-          name: kiro-provider-linux-amd64-v0.6.1
-          path: dist/linux/amd64/
+          name: kiro-provider-release-v${{ steps.version.outputs.version }}
+          path: dist/
           if-no-files-found: error
+
+  release:
+    needs: test
+    if: needs.test.outputs.release_tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: kiro-provider-release-v${{ needs.test.outputs.version }}
+          path: dist
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.test.outputs.release_tag }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$RELEASE_TAG" --generate-notes
+          fi
+          gh release upload "$RELEASE_TAG" dist/release/* --repo "$GITHUB_REPOSITORY" --clobber

@@ -45,6 +45,7 @@ Verification completed for this release:
 - `go vet ./...`
 - `go test ./...`
 - Linux amd64 `c-shared` build in Docker.
+- Plugin Store ZIP layout and SHA-256 checksum verification.
 - Network-isolated CPA integration tests covering the unauthenticated Resource
   Route, OAuth persistence, model discovery, quota, chat completions, tools,
   refresh, and account failover.
@@ -522,12 +523,15 @@ responses. All fixture credentials and responses are synthetic.
 2. Run `gofmt`, `go vet ./...`, and `go test ./...` in the pinned Go image.
 3. Build the Linux amd64 `.so` and run the isolated CPA integration suite.
 4. Confirm that test fixtures contain synthetic values only.
-5. Download the CI artifact and attach the versioned `.so` and its `.sha256`
-   file to the GitHub Release. Publish the optional customized
-   `management.html` as a separate release asset when its Kiro quota adapter
-   matches this plugin release.
-6. Tag the release; do not commit `dist/`, credentials, OAuth callbacks, or
-   local CPA configuration.
+5. Push a `v<version>` tag. CI creates or updates the GitHub Release and uploads
+   `kiro-provider_<version>_linux_amd64.zip` plus `checksums.txt`. The ZIP
+   contains `kiro-provider.so` at its root as required by the CPA Plugin Store.
+6. Publish the optional customized `management.html` as a separate release
+   asset when its Kiro quota adapter matches this plugin release.
+7. To repair assets for an existing tag, manually run the CI workflow with
+   `release_tag` set to that tag, such as `v0.6.1`.
+8. Do not commit `dist/`, credentials, OAuth callbacks, or local CPA
+   configuration.
 
 ## License
 
