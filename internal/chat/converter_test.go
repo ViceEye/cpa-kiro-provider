@@ -278,7 +278,7 @@ func TestMarshalKiroPayloadDoesNotLeaveLeadingToolResult(t *testing.T) {
 	payload := map[string]any{"conversationState": map[string]any{
 		"history": history,
 		"currentMessage": map[string]any{"userInputMessage": map[string]any{
-		"content": strings.Repeat("y", 500000), "modelId": "fixture", "origin": "AI_EDITOR",
+			"content": strings.Repeat("y", 500000), "modelId": "fixture", "origin": "AI_EDITOR",
 		}},
 	}}
 	encoded, errMarshal := marshalKiroPayload(payload, "keep-system-policy")
