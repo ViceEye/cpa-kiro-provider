@@ -61,7 +61,7 @@ func TestPrepareKiroStreamDiscoversProfileBeforePayload(t *testing.T) {
 
 	storage, _ := json.Marshal(credential{AccessToken: "fixture-access", RefreshToken: "fixture-refresh", ExpiresAt: time.Now().UTC().Add(time.Hour).Format(time.RFC3339)})
 	payload := []byte(`{"model":"kiro/fixture-model","messages":[{"role":"user","content":"hello"}],"stream":true}`)
-	response, _, errPrepare := prepareKiroStream(executorRequest{Model: "kiro/fixture-model", Payload: payload, StorageJSON: storage})
+	response, _, _, errPrepare := prepareKiroStream(executorRequest{Model: "kiro/fixture-model", Payload: payload, StorageJSON: storage})
 	if errPrepare != nil || response.StreamID != "fixture-stream" {
 		t.Fatalf("stream prepare = %#v, err=%v", response, errPrepare)
 	}

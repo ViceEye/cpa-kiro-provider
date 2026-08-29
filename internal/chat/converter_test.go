@@ -57,6 +57,87 @@ func TestBuildKiroPayloadWithHistoryImageAndTools(t *testing.T) {
 	}
 }
 
+func TestBuildPayloadStripsToolContentWhenToolsOmitted(t *testing.T) {
+	raw := []byte(`{"model":"kiro/gpt-5.6-luna","messages":[
+      {"role":"user","content":"run it"},
+      {"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]},
+      {"role":"tool","tool_call_id":"call_1","content":"done"},
+      {"role":"user","content":"continue"}
+    ]}`)
+	payload, _, errBuild := BuildPayload(raw, "kiro/gpt-5.6-luna", "arn:fake")
+	if errBuild != nil {
+		t.Fatalf("BuildPayload() error = %v", errBuild)
+	}
+	if strings.Contains(string(payload), "toolResults") || strings.Contains(string(payload), "toolUses") {
+		t.Fatalf("tool content survived without tools: %s", payload)
+	}
+	if !strings.Contains(string(payload), "[Tool Call]") || !strings.Contains(string(payload), "[Tool Result]") {
+		t.Fatalf("tool context was not preserved as text: %s", payload)
+	}
+}
+
+func TestBuildPayloadConvertsOrphanToolResult(t *testing.T) {
+	raw := []byte(`{"model":"kiro/gpt-5.6-luna","messages":[
+      {"role":"user","content":"previous"},
+      {"role":"tool","tool_call_id":"missing","content":"orphan result"},
+      {"role":"user","content":"continue"}
+    ],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`)
+	payload, _, errBuild := BuildPayload(raw, "kiro/gpt-5.6-luna", "arn:fake")
+	if errBuild != nil {
+		t.Fatalf("BuildPayload() error = %v", errBuild)
+	}
+	if strings.Contains(string(payload), "toolResults") {
+		t.Fatalf("orphan tool result survived: %s", payload)
+	}
+	if !strings.Contains(string(payload), "[Tool Result]") {
+		t.Fatalf("orphan tool result was not preserved as text: %s", payload)
+	}
+}
+
+func TestBuildPayloadKeepsOnlyMatchedToolPairs(t *testing.T) {
+	raw := []byte(`{"model":"kiro/claude-sonnet-5","messages":[
+      {"role":"user","content":"previous"},
+      {"role":"assistant","content":"","tool_calls":[
+        {"id":"call_ok","type":"function","function":{"name":"lookup","arguments":"{}"}},
+        {"id":"call_missing","type":"function","function":{"name":"write","arguments":"{\"path\":\"a\"}"}}
+      ]},
+      {"role":"tool","tool_call_id":"call_ok","content":"found"},
+      {"role":"tool","tool_call_id":"unknown","content":"orphan"},
+      {"role":"user","content":"continue"}
+    ],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`)
+	payload, _, errBuild := BuildPayload(raw, "kiro/claude-sonnet-5", "arn:fake")
+	if errBuild != nil {
+		t.Fatalf("BuildPayload() error = %v", errBuild)
+	}
+	if strings.Count(string(payload), `"toolUseId":"call_ok"`) != 2 {
+		t.Fatalf("matched tool pair missing: %s", payload)
+	}
+	if strings.Contains(string(payload), `"toolUseId":"call_missing"`) || strings.Contains(string(payload), `"toolUseId":"unknown"`) {
+		t.Fatalf("unmatched tool metadata survived: %s", payload)
+	}
+	if !strings.Contains(string(payload), "[Tool Call] write") || !strings.Contains(string(payload), "[Tool Result] (unknown)") {
+		t.Fatalf("unmatched tool context was not preserved as text: %s", payload)
+	}
+}
+
+func TestBuildPayloadFlattensToolCallsWithoutResults(t *testing.T) {
+	raw := []byte(`{"model":"kiro/claude-sonnet-5","messages":[
+      {"role":"user","content":"previous"},
+      {"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]},
+      {"role":"user","content":"continue"}
+    ],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`)
+	payload, _, errBuild := BuildPayload(raw, "kiro/claude-sonnet-5", "arn:fake")
+	if errBuild != nil {
+		t.Fatalf("BuildPayload() error = %v", errBuild)
+	}
+	if strings.Contains(string(payload), "toolUses") {
+		t.Fatalf("unresolved tool call survived: %s", payload)
+	}
+	if !strings.Contains(string(payload), "[Tool Call] lookup") {
+		t.Fatalf("unresolved tool call was not preserved as text: %s", payload)
+	}
+}
+
 func TestNormalizeConversationRepairsRoles(t *testing.T) {
 	messages := normalizeConversation([]normalizedMessage{{Role: "assistant", Text: "a"}, {Role: "user", Text: "b"}, {Role: "user", Text: "c"}})
 	for index, message := range messages {
@@ -67,6 +148,72 @@ func TestNormalizeConversationRepairsRoles(t *testing.T) {
 		if message.Role != want {
 			t.Fatalf("message %d role = %q, want %q", index, message.Role, want)
 		}
+	}
+}
+
+func TestSanitizeSchemaNormalizesTopLevelCombinators(t *testing.T) {
+	schema := map[string]any{
+		"oneOf": []any{
+			map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{"command": map[string]any{"type": "string"}},
+				"required":             []any{"command"},
+				"additionalProperties": false,
+			},
+			map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"path": map[string]any{"type": "string"}},
+				"required":   []any{},
+			},
+		},
+		"additionalProperties": false,
+	}
+
+	got := sanitizeSchema(schema)
+	if _, exists := got["oneOf"]; exists {
+		t.Fatalf("top-level oneOf was not removed: %#v", got)
+	}
+	if got["type"] != "object" {
+		t.Fatalf("type = %#v, want object", got["type"])
+	}
+	properties := got["properties"].(map[string]any)
+	if properties["command"] == nil || properties["path"] == nil {
+		t.Fatalf("merged properties = %#v", properties)
+	}
+	if _, exists := got["additionalProperties"]; exists {
+		t.Fatalf("additionalProperties was not removed: %#v", got)
+	}
+}
+
+func TestSanitizeSchemaRemovesNestedUnsupportedFields(t *testing.T) {
+	got := sanitizeSchema(map[string]any{
+		"type":                 "object",
+		"required":             []any{},
+		"additionalProperties": false,
+		"properties": map[string]any{
+			"value": map[string]any{
+				"type":                 "string",
+				"required":             []any{},
+				"additionalProperties": false,
+			},
+		},
+	})
+	if _, exists := got["required"]; exists {
+		t.Fatalf("empty root required was not removed: %#v", got)
+	}
+	property := got["properties"].(map[string]any)["value"].(map[string]any)
+	if _, exists := property["additionalProperties"]; exists {
+		t.Fatalf("nested additionalProperties was not removed: %#v", property)
+	}
+}
+
+func TestSanitizeSchemaDefaultsRootObject(t *testing.T) {
+	got := sanitizeSchema(map[string]any{"description": "free-form input"})
+	if got["type"] != "object" {
+		t.Fatalf("type = %#v, want object", got["type"])
+	}
+	if _, ok := got["properties"].(map[string]any); !ok {
+		t.Fatalf("properties = %#v, want object", got["properties"])
 	}
 }
 
@@ -123,7 +270,7 @@ func TestBuildKiroPayloadTrimsOversizedHistory(t *testing.T) {
 
 func TestMarshalKiroPayloadDoesNotLeaveLeadingToolResult(t *testing.T) {
 	history := []any{
-		map[string]any{"userInputMessage": map[string]any{"content": strings.Repeat("x", 350000)}},
+		map[string]any{"userInputMessage": map[string]any{"content": strings.Repeat("x", 500000)}},
 		map[string]any{"assistantResponseMessage": map[string]any{"content": "", "toolUses": []any{map[string]any{"toolUseId": "call-1", "name": "tool", "input": map[string]any{}}}}},
 		map[string]any{"userInputMessage": map[string]any{"content": "result", "userInputMessageContext": map[string]any{"toolResults": []map[string]any{{"toolUseId": "call-1"}}}}},
 		map[string]any{"assistantResponseMessage": map[string]any{"content": "done"}},
@@ -131,7 +278,7 @@ func TestMarshalKiroPayloadDoesNotLeaveLeadingToolResult(t *testing.T) {
 	payload := map[string]any{"conversationState": map[string]any{
 		"history": history,
 		"currentMessage": map[string]any{"userInputMessage": map[string]any{
-			"content": strings.Repeat("y", 300000), "modelId": "fixture", "origin": "AI_EDITOR",
+		"content": strings.Repeat("y", 500000), "modelId": "fixture", "origin": "AI_EDITOR",
 		}},
 	}}
 	encoded, errMarshal := marshalKiroPayload(payload, "keep-system-policy")

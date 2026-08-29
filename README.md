@@ -7,48 +7,37 @@ CLIProxyAPI. It imports existing Kiro IDE, kiro-cli, Amazon Q, and AWS SSO
 credentials and exposes Kiro runtime models through the normal CPA API.
 
 The production runtime consists only of CLIProxyAPI and
-`kiro-provider-v0.6.1.so`. Kiro Gateway is the protocol reference and is not a
+`kiro-provider-v0.7.7.so`. Kiro Gateway is the protocol reference and is not a
 sidecar or runtime dependency.
 
 ## Current release
 
-### v0.6.1 - 2026-08-17
-
-Changes:
-
-- Documented the supported Kiro login modes, plugin configuration, remote CPA
-  limitations, credential import, token refresh, and quota-panel deployment.
-- Corrected the remote browser-login guidance: production `app.kiro.dev`
-  accepts only loopback redirect URIs or `app.kiro.dev` subdomains. A public
-  CPA hostname cannot be used directly as `browser_redirect_uri`.
-- Clarified that the optional management-panel build changes only Kiro quota
-  display; OAuth remains owned by CPA and the plugin.
-- Accepts AWS device-verification links on either the regional
-  `device.sso.{region}.amazonaws.com` host or the exact configured
-  `sso_start_url` host.
-- Keeps arbitrary AWS and third-party verification hosts rejected.
+### v0.7.7 - 2026-08-29
 
 Fixes:
 
-- Fixed organization device login failing with
-  `Kiro device authorization returned an untrusted verification URL` when AWS
-  returns the organization's `*.awsapps.com` verification page.
-
-Compatibility note: live production validation on 2026-08-17 confirmed that
-`app.kiro.dev` rejects third-party public HTTPS callback hosts. The plugin-owned
-Resource Routes remain available for compatible environments, but they do not
-remove the localhost requirement for production Kiro browser OAuth. Remote
-organization and Builder ID logins should use `aws-device`.
+- Keeps one CPA auth record per physical credential file. The plugin no longer
+  returns a content-hash auth ID from `auth.parse`, command line imports, refresh
+  responses, and model-discovery updates; the host now derives one file-based
+  record ID that `host.auth.save` upserts instead of registering a second record
+  for the same file. Multi-account files keep distinct per-account IDs.
+- Refresh responses now carry over stored fields the plugin does not model
+  (`disabled`, `priority`, `note`, ...), so a refreshed credential no longer
+  loses its disabled flag or weight.
+- Keeps the host record ID out of the stored credential JSON, so the
+  credential's content identity survives host-driven refreshes.
+- Preserves host record attributes (including the auth file path) across
+  refresh and model-discovery updates.
+- The console closes the relogin flow steps automatically after a successful
+  relogin instead of leaving the login URL and callback box open.
 
 Verification completed for this release:
 
 - `go vet ./...`
 - `go test ./...`
 - Linux amd64 `c-shared` build in Docker.
-- Plugin Store ZIP layout and SHA-256 checksum verification.
-- Network-isolated CPA integration tests covering the unauthenticated Resource
-  Route, OAuth persistence, model discovery, quota, chat completions, tools,
-  refresh, and account failover.
+- Live CPA deployment: refreshed credential persisted to the original file and
+  the auth manager kept exactly one record for it.
 
 ## Release changelog
 
@@ -66,6 +55,9 @@ commit.
 | `v0.5.6` | 2026-08-17 | Preserved system/developer instructions during trimming and hardened orphaned tool-result removal. |
 | `v0.6.0` | 2026-08-17 | Added plugin-owned OAuth Resource Routes and callback handling for compatible environments. Production `app.kiro.dev` still requires a loopback redirect URI, so remote Builder ID and organization login use `aws-device`. |
 | `v0.6.1` | 2026-08-17 | Accepted organization-specific AWS device verification URLs without broadening the trusted-host boundary. |
+| `v0.6.2` | 2026-08-26 | Added Codex-to-Kiro Claude history normalization and fixed fragmented `toolUseEvent` output producing duplicate malformed OpenAI tool calls. |
+| `v0.7.0` | 2026-08-27 | Fixed object-valued tool arguments concatenating into invalid JSON, dropped `required` entries with no matching property, removed the assistant-content filler sentence that models echoed back as output, and degraded oversized requests by dropping large images and truncating large tool results instead of failing the turn. |
+| `v0.7.7` | 2026-08-29 | Unified auth record identity on the host's file-based ID so plugin saves upsert instead of duplicating credentials, kept host record IDs out of stored credential JSON, and made the console close the relogin flow after success. |
 
 When Git history starts, use commits and tags as the source of truth for later
 releases instead of extending this reconstructed pre-Git history.
@@ -174,7 +166,7 @@ organization SSO, and leave the panel open until CPA reports success.
 | `enabled` | `true` | Enables this plugin configuration. |
 | `priority` | host default | CPA provider priority. |
 | `import_mode` | `reference` | Controls imported files: `reference` reloads the source; `copy` stores an independent copy. OAuth logins are stored by CPA. |
-| `login_mode` | `kiro-browser` | Selects `kiro-browser`, `organization-browser`, or `aws-device`. |
+| `login_mode` | `kiro-browser` | Selects `kiro-browser` or `aws-device`. |
 | `sso_start_url` | `https://view.awsapps.com/start` | Default means Builder ID; an organization `*.awsapps.com/start` URL means IAM Identity Center. |
 | `sso_region` | `us-east-1` | AWS SSO OIDC registration, device authorization, and refresh region. |
 | `api_region` | `us-east-1` | Kiro runtime, model discovery, profile, and quota region. |
@@ -193,7 +185,6 @@ Choose the flow based on the account and where CPA runs:
 | --- | --- | --- | --- |
 | `aws-device` | AWS Builder ID or organization IAM Identity Center | Opens an AWS verification URL and CPA polls for completion | Recommended |
 | `kiro-browser` | Kiro personal/social browser OAuth compatible with kiro-cli | Kiro redirects to `http://localhost:3128` | Requires a local callback listener, relay, or manual callback submission |
-| `organization-browser` | Experimental direct IAM Identity Center authorization-code flow | AWS redirects to `http://localhost:3128/signin/callback` | Requires a local callback listener or relay |
 
 Kiro's production sign-in page rejects arbitrary public redirect hosts with
 `Invalid redirect URI. Must be localhost or a subdomain of app.kiro.dev`.
@@ -252,10 +243,10 @@ plugins:
 When CPA is remote, `localhost` belongs to the browser machine, not the CPA
 server. Complete this flow with one of the following:
 
-1. Run a loopback callback relay on the browser machine.
-2. Use a management panel that submits the complete localhost callback URL to
+1. Use a local Kiro CLI/browser listener or another loopback relay, then paste
+   the complete localhost callback URL into a management panel that submits it to
    `POST /v0/management/plugins/kiro-provider/oauth/callback`.
-3. Sign in with Kiro CLI or Quotio and import the resulting credential.
+2. Sign in with Kiro CLI or Quotio and import the resulting credential.
 
 Never paste OAuth callback URLs into logs or issues; they may contain a
 short-lived authorization code.
@@ -287,7 +278,7 @@ docker build --output type=local,dest=dist .
 The artifact is written to:
 
 ```text
-dist/linux/amd64/kiro-provider-v0.6.1.so
+dist/linux/amd64/kiro-provider-v0.7.7.so
 ```
 
 ## Install
@@ -297,11 +288,11 @@ subdirectory. Copy the versioned library using either layout:
 
 ```bash
 # Flat layout, such as the default /CLIProxyAPI/plugins mount:
-cp dist/linux/amd64/kiro-provider-v0.6.1.so plugins/
+cp dist/linux/amd64/kiro-provider-v0.7.7.so plugins/
 
 # Or platform-specific layout:
 mkdir -p plugins/linux/amd64
-cp dist/linux/amd64/kiro-provider-v0.6.1.so plugins/linux/amd64/
+cp dist/linux/amd64/kiro-provider-v0.7.7.so plugins/linux/amd64/
 ```
 
 Enable the plugin in `config.yaml`:
@@ -529,7 +520,7 @@ responses. All fixture credentials and responses are synthetic.
 6. Publish the optional customized `management.html` as a separate release
    asset when its Kiro quota adapter matches this plugin release.
 7. To repair assets for an existing tag, manually run the CI workflow with
-   `release_tag` set to that tag, such as `v0.6.1`.
+   `release_tag` set to that tag, such as `v0.7.0`.
 8. Do not commit `dist/`, credentials, OAuth callbacks, or local CPA
    configuration.
 

@@ -75,12 +75,17 @@ func TestModelsForAuthPersistsRefreshAndDiscoversModels(t *testing.T) {
 	if response.Models[0].Description != "Fixture description (1.5 Credit)" {
 		t.Fatalf("model description = %q", response.Models[0].Description)
 	}
-	if response.AuthUpdate.ID != "kiro-existing" {
-		t.Fatalf("auth update ID = %q", response.AuthUpdate.ID)
+	// The update leaves ID/FileName empty so the host keeps the existing record
+	// identity, and the stored JSON must not adopt the host record ID.
+	if response.AuthUpdate.ID != "" || response.AuthUpdate.FileName != "" {
+		t.Fatalf("auth update identity = %q/%q, want empty", response.AuthUpdate.ID, response.AuthUpdate.FileName)
 	}
 	updated, errCredential := decodeCredential(response.AuthUpdate.StorageJSON)
 	if errCredential != nil {
 		t.Fatal(errCredential)
+	}
+	if updated.AuthID == "kiro-existing" {
+		t.Fatalf("stored auth_id adopted the host record ID: %q", updated.AuthID)
 	}
 	if updated.AccessToken != "refreshed-access" || updated.RefreshToken != "rotated-refresh" || updated.ProfileARN == "" {
 		t.Fatalf("updated credential = %#v", updated)
@@ -122,8 +127,10 @@ func TestModelsForAuthKeepsCredentialIDWhenProfileIsDiscovered(t *testing.T) {
 	_ = json.Unmarshal(rawResponse, &env)
 	var response modelResponse
 	_ = json.Unmarshal(env.Result, &response)
-	if response.AuthUpdate.ID != wantID || response.AuthUpdate.FileName != wantID+".json" {
-		t.Fatalf("auth identity changed during profile discovery: %#v", response.AuthUpdate)
+	// Wire identity stays empty (the host keeps its record identity), but the
+	// stored credential must retain its own content-derived identity.
+	if response.AuthUpdate.ID != "" || response.AuthUpdate.FileName != "" {
+		t.Fatalf("wire auth identity = %q/%q, want empty", response.AuthUpdate.ID, response.AuthUpdate.FileName)
 	}
 	updated, errCredential := decodeCredential(response.AuthUpdate.StorageJSON)
 	if errCredential != nil || updated.ProfileARN == "" || updated.AuthID != wantID || credentialID(updated) != wantID {

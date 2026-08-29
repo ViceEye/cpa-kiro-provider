@@ -45,10 +45,32 @@ func registerManagement() ([]byte, error) {
 	return okEnvelope(map[string]any{
 		"Routes": []any{
 			map[string]any{
+				"Method":      http.MethodPost,
+				"Path":        "plugins/kiro-provider/oauth/relogin/start",
+				"Description": "Starts Kiro OAuth again and replaces an existing Kiro credential.",
+			},
+			map[string]any{
+				"Method":      http.MethodGet,
+				"Path":        "plugins/kiro-provider/oauth/relogin/status",
+				"Description": "Polls a Kiro credential replacement login.",
+			},
+			map[string]any{
 				"Method":      http.MethodGet,
 				"Path":        "plugins/kiro-provider/quota",
 				"Description": "Returns sanitized Kiro subscription and credit quota data for all Kiro auths.",
 			},
+			map[string]any{
+				"Method":      http.MethodPost,
+				"Path":        "plugins/kiro-provider/quotaRequest",
+				"Description": "Refreshes sanitized Kiro subscription and credit quota data for all Kiro auths.",
+			},
+			map[string]any{
+				"Method":      http.MethodGet,
+				"Path":        "plugins/kiro-provider/credentials",
+				"Description": "Returns sanitized CPA credential records and request statistics.",
+			},
+			map[string]any{"Method": http.MethodPost, "Path": "plugins/kiro-provider/console/oauth/start", "Description": "Starts Kiro OAuth from the Kiro Console."},
+			map[string]any{"Method": http.MethodGet, "Path": "plugins/kiro-provider/console/oauth/status", "Description": "Polls Kiro Console OAuth."},
 			map[string]any{
 				"Method":      http.MethodPost,
 				"Path":        "plugins/kiro-provider/oauth/callback",
@@ -57,12 +79,9 @@ func registerManagement() ([]byte, error) {
 		},
 		"Resources": []any{
 			map[string]any{
-				"Path":        "oauth",
-				"Description": "Receives the public Kiro browser OAuth callback.",
-			},
-			map[string]any{
-				"Path":        "oauth/signin/callback",
-				"Description": "Receives Kiro callbacks when the sign-in portal appends /signin/callback.",
+				"Path":        "console",
+				"Menu":        "Kiro Console",
+				"Description": "View Kiro credentials, request activity, quotas, and OAuth.",
 			},
 		},
 	})
@@ -76,9 +95,38 @@ func handleManagement(raw []byte) ([]byte, error) {
 	if isBrowserCallbackResourcePath(req.Path) {
 		return handleBrowserCallbackResource(req)
 	}
+	if isConsoleResourcePath(req.Path) {
+		return okEnvelope(managementResponse{
+			StatusCode: http.StatusOK,
+			Headers:    http.Header{"Content-Type": []string{"text/html; charset=utf-8"}, "Cache-Control": []string{"no-store"}},
+			Body:       consolePanelHTML(),
+		})
+	}
 	path := normalizeManagementPath(req.Path)
+	if path == "/plugins/kiro-provider/oauth/relogin/start" {
+		return handleReloginStart(req)
+	}
+	if path == "/plugins/kiro-provider/oauth/relogin/status" {
+		return handleReloginStatus(req)
+	}
+	if path == "/plugins/kiro-provider/console/oauth/start" {
+		return handleConsoleOAuthStart(req)
+	}
+	if path == "/plugins/kiro-provider/console/oauth/status" {
+		return handleConsoleOAuthStatus(req)
+	}
 	if path == "/plugins/kiro-provider/oauth/callback" {
 		return handleBrowserCallbackManagement(req)
+	}
+	if path == "/plugins/kiro-provider/credentials" {
+		if !strings.EqualFold(req.Method, http.MethodGet) {
+			return okEnvelope(managementResponse{StatusCode: http.StatusMethodNotAllowed, Headers: jsonHeaders(), Body: mustJSON(map[string]any{"error": "method_not_allowed"})})
+		}
+		return handleCredentialRecords()
+	}
+	refreshRequest := path == "/plugins/kiro-provider/quotaRequest"
+	if refreshRequest {
+		path = "/plugins/kiro-provider/quota"
 	}
 	if path != "/plugins/kiro-provider/quota" {
 		return okEnvelope(managementResponse{
@@ -87,7 +135,7 @@ func handleManagement(raw []byte) ([]byte, error) {
 			Body:       mustJSON(map[string]any{"error": "not_found"}),
 		})
 	}
-	if !strings.EqualFold(req.Method, http.MethodGet) {
+	if !strings.EqualFold(req.Method, http.MethodGet) && !(refreshRequest && strings.EqualFold(req.Method, http.MethodPost)) {
 		return okEnvelope(managementResponse{
 			StatusCode: http.StatusMethodNotAllowed,
 			Headers:    jsonHeaders(),
@@ -113,9 +161,77 @@ func handleManagement(raw []byte) ([]byte, error) {
 	})
 }
 
+func handleCredentialRecords() ([]byte, error) {
+	result, errList := callHostCall("host.auth.list", map[string]any{})
+	if errList != nil {
+		return okEnvelope(managementResponse{StatusCode: http.StatusBadGateway, Headers: jsonHeaders(), Body: mustJSON(map[string]any{"error": "credential_list_failed", "message": errList.Error()})})
+	}
+	var list hostAuthListResponse
+	if errUnmarshal := json.Unmarshal(result, &list); errUnmarshal != nil {
+		return okEnvelope(managementResponse{StatusCode: http.StatusBadGateway, Headers: jsonHeaders(), Body: mustJSON(map[string]any{"error": "credential_list_failed"})})
+	}
+	// host.auth.list carries no request stats, so merge the plugin's in-memory
+	// counters keyed by each credential's stable auth_id.
+	records := make([]map[string]any, 0, len(list.Files))
+	for _, entry := range list.Files {
+		record := map[string]any{
+			"id": entry.ID, "auth_index": entry.AuthIndex, "name": entry.Name,
+			"type": entry.Type, "provider": entry.Provider, "label": entry.Label,
+			"disabled": entry.Disabled,
+		}
+		if authID := credentialAuthID(entry); authID != "" {
+			if snap, ok := statFor(authID); ok {
+				record["success"] = snap.Success
+				record["failed"] = snap.Failure
+				record["history"] = snap.History
+				if snap.LastRequest != "" {
+					record["last_request"] = snap.LastRequest
+				}
+			}
+		}
+		records = append(records, record)
+	}
+	return okEnvelope(managementResponse{StatusCode: http.StatusOK, Headers: jsonHeaders(), Body: mustJSON(map[string]any{
+		"generated_at": time.Now().UTC().Format(time.RFC3339), "credentials": records,
+	})})
+}
+
+// credentialAuthID resolves the stable kiro auth_id for a listed credential so
+// in-memory request stats can be matched to it.
+func credentialAuthID(entry hostAuthFileEntry) string {
+	if entry.AuthIndex == "" {
+		return ""
+	}
+	result, err := callHostCall("host.auth.get", map[string]any{"auth_index": entry.AuthIndex})
+	if err != nil {
+		return ""
+	}
+	var auth hostAuthGetResponse
+	if json.Unmarshal(result, &auth) != nil {
+		return ""
+	}
+	cred, errCred := decodeCredential(auth.JSON)
+	if errCred != nil {
+		return ""
+	}
+	if stable := validCredentialID(cred.AuthID); stable != "" {
+		return stable
+	}
+	nameID := strings.TrimSuffix(strings.TrimSpace(auth.Name), ".json")
+	if stable := validCredentialID(nameID); stable != "" {
+		return stable
+	}
+	return credentialID(cred)
+}
+
 func isBrowserCallbackResourcePath(value string) bool {
 	path := strings.TrimRight(strings.TrimSpace(value), "/")
 	return path == "/v0/resource/plugins/kiro-provider/oauth" || path == "/v0/resource/plugins/kiro-provider/oauth/signin/callback"
+}
+
+func isConsoleResourcePath(value string) bool {
+	path := strings.TrimRight(strings.TrimSpace(value), "/")
+	return path == "/v0/resource/plugins/kiro-provider/console"
 }
 
 func normalizeManagementPath(value string) string {

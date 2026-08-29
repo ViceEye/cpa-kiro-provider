@@ -9,7 +9,7 @@ import (
 const (
 	providerID    = "kiro"
 	pluginName    = "kiro-provider"
-	pluginVersion = "0.6.1"
+	pluginVersion = "0.7.7"
 	defaultRegion = "us-east-1"
 
 	defaultSSOStartURL    = "https://view.awsapps.com/start"
@@ -373,6 +373,14 @@ type managementRequest struct {
 	Query          map[string][]string `json:"Query"`
 	Body           []byte              `json:"Body"`
 	HostCallbackID string              `json:"host_callback_id,omitempty"`
+}
+
+type reloginRequest struct {
+	AuthIndex string `json:"auth_index"`
+}
+
+type reloginStatusRequest struct {
+	State string `json:"state"`
 }
 
 type managementResponse struct {

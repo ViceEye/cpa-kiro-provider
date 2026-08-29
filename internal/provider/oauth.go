@@ -60,14 +60,72 @@ type oidcTokenResponse struct {
 }
 
 func startLogin(raw []byte) ([]byte, error) {
+	var req authLoginStartRequest
+	_ = json.Unmarshal(raw, &req)
+	result, err := startLoginInternal(raw, req)
+	if err != nil || len(req.Metadata) > 0 || strings.TrimSpace(req.BaseURL) == "" {
+		return result, err
+	}
+	return rewriteOAuthURLToConsole(result, req.BaseURL), nil
+}
+
+func startLoginInternal(raw []byte, req authLoginStartRequest) ([]byte, error) {
+	if json.Unmarshal(raw, &req) == nil {
+		mode := strings.ToLower(strings.TrimSpace(jsonx.String(req.Metadata, "login_mode")))
+		if mode == "kiro-browser" || mode == "aws-device" {
+			config := loadedConfig()
+			applyOAuthOverrides(&config, req.Metadata)
+			if mode == "kiro-browser" {
+				return startBrowserLoginWithConfig(raw, config)
+			}
+			return startDeviceLoginWithConfig(raw, config)
+		}
+	}
 	config := loadedConfig()
 	if config.LoginMode == "aws-device" {
 		return startDeviceLogin(raw)
 	}
-	if config.LoginMode == "organization-browser" {
-		return startIDCBrowserLogin(raw)
-	}
 	return startBrowserLogin(raw)
+}
+
+func rewriteOAuthURLToConsole(raw []byte, baseURL string) []byte {
+	var env envelope
+	if json.Unmarshal(raw, &env) != nil || !env.OK {
+		return raw
+	}
+	var started authLoginStartResponse
+	if json.Unmarshal(env.Result, &started) != nil || strings.TrimSpace(started.State) == "" {
+		return raw
+	}
+	consoleOAuthSessions.Lock()
+	consoleOAuthSessions.metadata[started.State] = started.Metadata
+	consoleOAuthSessions.Unlock()
+	// Return a same-origin management-panel route. A relative URL lets the
+	// browser preserve the public CPA hostname (instead of exposing the
+	// backend's 127.0.0.1:8317 /v0 resource URL). The console starts its own
+	// OAuth session after opening, so the original host-side state is not
+	// needed in this navigation link.
+	if strings.TrimSpace(baseURL) == "" {
+		return raw
+	}
+	started.URL = "/management.html#/plugin-pages/kiro-provider/0"
+	env.Result = mustJSON(started)
+	return mustJSON(env)
+}
+
+func applyOAuthOverrides(config *pluginConfig, metadata map[string]any) {
+	if config == nil {
+		return
+	}
+	if value := strings.TrimSpace(jsonx.String(metadata, "sso_start_url")); value != "" {
+		config.SSOStartURL = value
+	}
+	if value := strings.TrimSpace(jsonx.String(metadata, "sso_region")); value != "" {
+		config.SSORegion = value
+	}
+	if value := strings.TrimSpace(jsonx.String(metadata, "browser_redirect_uri")); value != "" {
+		config.BrowserRedirectURI = value
+	}
 }
 
 func pollLogin(raw []byte) ([]byte, error) {
@@ -76,9 +134,6 @@ func pollLogin(raw []byte) ([]byte, error) {
 		return nil, errUnmarshal
 	}
 	mode := strings.ToLower(strings.TrimSpace(jsonx.String(req.Metadata, "login_mode")))
-	if mode == "organization-browser" {
-		return pollIDCBrowserLoginRequest(req)
-	}
 	if mode == "aws-device" || (mode == "" && jsonx.String(req.Metadata, "device_code") != "") {
 		return pollDeviceLoginRequest(req)
 	}
@@ -86,6 +141,10 @@ func pollLogin(raw []byte) ([]byte, error) {
 }
 
 func startIDCBrowserLogin(raw []byte) ([]byte, error) {
+	return startIDCBrowserLoginWithConfig(raw, loadedConfig())
+}
+
+func startIDCBrowserLoginWithConfig(raw []byte, config pluginConfig) ([]byte, error) {
 	var req authLoginStartRequest
 	if errUnmarshal := json.Unmarshal(raw, &req); errUnmarshal != nil {
 		return nil, errUnmarshal
@@ -93,7 +152,6 @@ func startIDCBrowserLogin(raw []byte) ([]byte, error) {
 	if req.Provider != "" && !strings.EqualFold(req.Provider, providerID) {
 		return errorEnvelope("invalid_provider", "Kiro login received an unexpected provider", false, http.StatusBadRequest), nil
 	}
-	config := loadedConfig()
 	region := jsonx.NonEmpty(strings.TrimSpace(config.SSORegion), defaultRegion)
 	apiRegion := configuredAPIRegion(config)
 	startURL := strings.TrimRight(strings.TrimSpace(config.SSOStartURL), "/")
@@ -145,6 +203,12 @@ func startIDCBrowserLogin(raw []byte) ([]byte, error) {
 	metadataRaw, _ := json.Marshal(loginState)
 	var metadata map[string]any
 	_ = json.Unmarshal(metadataRaw, &metadata)
+	// Keep a callback session for the public/resource callback path too.
+	storeBrowserLoginSession(browserLoginState{
+		Version: 1, LoginMode: "organization-browser", State: state,
+		CodeVerifier: verifier, RedirectURI: redirectURI, APIRegion: apiRegion,
+		ExpiresAt: expiresAt.Format(time.RFC3339),
+	})
 	return okEnvelope(authLoginStartResponse{Provider: providerID, URL: authorizeURL.String(), State: state, ExpiresAt: expiresAt, Metadata: metadata})
 }
 
@@ -252,6 +316,10 @@ func readOAuthCallback(authDir, state string) (oauthCallbackPayload, string, boo
 }
 
 func startBrowserLogin(raw []byte) ([]byte, error) {
+	return startBrowserLoginWithConfig(raw, loadedConfig())
+}
+
+func startBrowserLoginWithConfig(raw []byte, config pluginConfig) ([]byte, error) {
 	var req authLoginStartRequest
 	if errUnmarshal := json.Unmarshal(raw, &req); errUnmarshal != nil {
 		return nil, errUnmarshal
@@ -265,7 +333,6 @@ func startBrowserLogin(raw []byte) ([]byte, error) {
 		return pluginErrorEnvelope(statusError{Code: "login_random_error", Message: "Kiro PKCE generation failed", HTTPStatus: http.StatusInternalServerError, Cause: errPKCE}), nil
 	}
 	state := randomID()
-	config := loadedConfig()
 	redirectURL, errRedirect := parseBrowserRedirectURI(config.BrowserRedirectURI)
 	if errRedirect != nil {
 		return errorEnvelope("invalid_login_config", errRedirect.Error(), false, http.StatusInternalServerError), nil
@@ -422,6 +489,10 @@ func decodeBrowserLoginState(metadata map[string]any) (browserLoginState, error)
 }
 
 func startDeviceLogin(raw []byte) ([]byte, error) {
+	return startDeviceLoginWithConfig(raw, loadedConfig())
+}
+
+func startDeviceLoginWithConfig(raw []byte, config pluginConfig) ([]byte, error) {
 	var req authLoginStartRequest
 	if errUnmarshal := json.Unmarshal(raw, &req); errUnmarshal != nil {
 		return nil, errUnmarshal
@@ -430,7 +501,6 @@ func startDeviceLogin(raw []byte) ([]byte, error) {
 		return errorEnvelope("invalid_provider", "Kiro login received an unexpected provider", false, http.StatusBadRequest), nil
 	}
 
-	config := loadedConfig()
 	region := jsonx.NonEmpty(strings.TrimSpace(config.SSORegion), defaultRegion)
 	apiRegion := configuredAPIRegion(config)
 	startURL := jsonx.NonEmpty(strings.TrimSpace(config.SSOStartURL), defaultSSOStartURL)

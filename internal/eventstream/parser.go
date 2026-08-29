@@ -19,6 +19,10 @@ type Event struct {
 	Usage      int64
 	ContextUse float64
 	Message    string
+	// ReplacesInput marks a tool_stop whose ToolInput is the whole argument
+	// value rather than the tail of a stream of deltas, because the upstream
+	// sent a complete object input that no tool_input delta carried.
+	ReplacesInput bool
 }
 
 type Parser struct {
@@ -27,6 +31,9 @@ type Parser struct {
 	currentToolID   string
 	currentToolName string
 	currentToolArgs strings.Builder
+	// currentToolWhole marks that the accumulated arguments came from a
+	// complete object input, so no streaming delta was emitted for them.
+	currentToolWhole bool
 }
 
 func (p *Parser) Feed(chunk []byte) ([]Event, error) {
@@ -73,11 +80,7 @@ func (p *Parser) Finish() ([]Event, error) {
 		return nil, fmt.Errorf("truncated AWS Event Stream frame: %d buffered bytes", len(p.buffer))
 	}
 	if p.currentToolID != "" || p.currentToolName != "" {
-		event := Event{Type: "tool_stop", ToolUseID: p.currentToolID, ToolName: p.currentToolName, ToolInput: p.currentToolArgs.String()}
-		p.currentToolID = ""
-		p.currentToolName = ""
-		p.currentToolArgs.Reset()
-		return []Event{event}, nil
+		return []Event{p.finishTool()}, nil
 	}
 	return nil, nil
 }
@@ -174,20 +177,32 @@ func (p *Parser) parsePayload(headers map[string]any, payload []byte) ([]Event, 
 		p.lastContent = content
 		events = append(events, Event{Type: "content", Content: content})
 	}
-	if name := jsonx.String(object, "name"); name != "" {
+	name := jsonx.String(object, "name")
+	toolID := jsonx.String(object, "toolUseId")
+	if name != "" && (p.currentToolName == "" || toolID != p.currentToolID || name != p.currentToolName) {
 		if p.currentToolName != "" {
 			events = append(events, p.finishTool())
 		}
 		p.currentToolName = name
-		p.currentToolID = jsonx.String(object, "toolUseId")
-		if input, exists := object["input"]; exists {
-			p.currentToolArgs.WriteString(jsonFragment(input))
-		}
-		events = append(events, Event{Type: "tool_start", ToolUseID: p.currentToolID, ToolName: name})
+		p.currentToolID = toolID
+		events = append(events, Event{Type: "tool_start", ToolUseID: toolID, ToolName: name})
 	}
-	if input, exists := object["input"]; exists && jsonx.String(object, "name") == "" && p.currentToolName != "" {
-		p.currentToolArgs.WriteString(jsonFragment(input))
-		events = append(events, Event{Type: "tool_input", ToolUseID: p.currentToolID, ToolInput: jsonFragment(input)})
+	if input, exists := object["input"]; exists && p.currentToolName != "" {
+		// String inputs stream in as partial JSON and must be concatenated.
+		// Object inputs arrive already complete, so the latest one replaces the
+		// accumulated value rather than appending a second JSON document. A
+		// replacement cannot be expressed as a streaming delta, so it is held
+		// back and emitted once by finishTool.
+		if fragment, isText := input.(string); isText {
+			if fragment != "" {
+				p.currentToolArgs.WriteString(fragment)
+				events = append(events, Event{Type: "tool_input", ToolUseID: p.currentToolID, ToolInput: fragment})
+			}
+		} else if encoded := jsonFragment(input); encoded != "" {
+			p.currentToolArgs.Reset()
+			p.currentToolArgs.WriteString(encoded)
+			p.currentToolWhole = true
+		}
 	}
 	if stop, _ := object["stop"].(bool); stop && p.currentToolName != "" {
 		events = append(events, p.finishTool())
@@ -202,10 +217,17 @@ func (p *Parser) parsePayload(headers map[string]any, payload []byte) ([]Event, 
 }
 
 func (p *Parser) finishTool() Event {
-	event := Event{Type: "tool_stop", ToolUseID: p.currentToolID, ToolName: p.currentToolName, ToolInput: p.currentToolArgs.String()}
+	event := Event{
+		Type:          "tool_stop",
+		ToolUseID:     p.currentToolID,
+		ToolName:      p.currentToolName,
+		ToolInput:     p.currentToolArgs.String(),
+		ReplacesInput: p.currentToolWhole,
+	}
 	p.currentToolID = ""
 	p.currentToolName = ""
 	p.currentToolArgs.Reset()
+	p.currentToolWhole = false
 	return event
 }
 

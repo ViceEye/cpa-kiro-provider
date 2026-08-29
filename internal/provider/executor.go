@@ -28,14 +28,16 @@ func executeRequest(raw []byte) ([]byte, error) {
 	}
 	payload, cred, model, response, errExecute := executeKiroNonStream(req)
 	_ = payload
-	_ = cred
 	if errExecute != nil {
+		recordRequest(cred.AuthID, false)
 		return pluginErrorEnvelope(errExecute), nil
 	}
 	body, errConvert := convertNonStreamResponse(response.Body, model)
 	if errConvert != nil {
+		recordRequest(cred.AuthID, false)
 		return pluginErrorEnvelope(errConvert), nil
 	}
+	recordRequest(cred.AuthID, true)
 	return okEnvelope(executorResponse{Payload: body, Headers: http.Header{"Content-Type": []string{"application/json"}}})
 }
 
@@ -108,25 +110,29 @@ func executeStream(raw []byte) ([]byte, error) {
 	if strings.TrimSpace(req.StreamID) == "" {
 		return errorEnvelope("executor_error", "stream_id is required", false, http.StatusInternalServerError), nil
 	}
-	response, model, errPrepare := prepareKiroStream(req)
+	response, model, cred, errPrepare := prepareKiroStream(req)
 	if errPrepare != nil {
+		recordRequest(cred.AuthID, false)
 		return pluginErrorEnvelope(errPrepare), nil
 	}
+	authID := cred.AuthID
 	go func() {
 		errRun := consumeKiroStream(req.StreamID, response, model)
 		if errRun != nil {
+			recordRequest(authID, false)
 			closePluginStream(req.StreamID, errRun.Error())
 			return
 		}
+		recordRequest(authID, true)
 		closePluginStream(req.StreamID, "")
 	}()
 	return okEnvelope(map[string]any{"headers": http.Header{"Content-Type": []string{"text/event-stream"}}})
 }
 
-func prepareKiroStream(req executorRequest) (hostHTTPStreamResponse, string, error) {
+func prepareKiroStream(req executorRequest) (hostHTTPStreamResponse, string, credential, error) {
 	cred, errCred := decodeCredential(req.StorageJSON)
 	if errCred != nil {
-		return hostHTTPStreamResponse{}, "", statusError{Code: "invalid_auth", Message: errCred.Error(), HTTPStatus: http.StatusUnauthorized}
+		return hostHTTPStreamResponse{}, "", credential{}, statusError{Code: "invalid_auth", Message: errCred.Error(), HTTPStatus: http.StatusUnauthorized}
 	}
 	if stableID := validCredentialID(req.AuthID); stableID != "" {
 		cred.AuthID = stableID
@@ -136,14 +142,14 @@ func prepareKiroStream(req executorRequest) (hostHTTPStreamResponse, string, err
 	if credentialNeedsRefresh(cred) {
 		refreshed, errRefresh := refreshCredential(cred, req.HostCallbackID)
 		if errRefresh != nil {
-			return hostHTTPStreamResponse{}, "", errRefresh
+			return hostHTTPStreamResponse{}, "", cred, errRefresh
 		}
 		cred = refreshed
 		persistCredentialBestEffort(req.AuthID, cred)
 	}
 	withProfile, discovered, errProfile := ensureProfileARN(cred, req.HostCallbackID)
 	if errProfile != nil {
-		return hostHTTPStreamResponse{}, "", errProfile
+		return hostHTTPStreamResponse{}, "", cred, errProfile
 	}
 	cred = withProfile
 	if discovered {
@@ -151,34 +157,34 @@ func prepareKiroStream(req executorRequest) (hostHTTPStreamResponse, string, err
 	}
 	payload, model, errPayload := chat.BuildPayload(req.Payload, req.Model, cred.ProfileARN)
 	if errPayload != nil {
-		return hostHTTPStreamResponse{}, model, statusError{Code: "invalid_request", Message: errPayload.Error(), HTTPStatus: http.StatusBadRequest}
+		return hostHTTPStreamResponse{}, model, cred, statusError{Code: "invalid_request", Message: errPayload.Error(), HTTPStatus: http.StatusBadRequest}
 	}
 	response, errOpen := openKiroStream(cred, payload, req.HostCallbackID)
 	if errOpen != nil {
-		return response, model, errOpen
+		return response, model, cred, errOpen
 	}
 	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
 		closeHostHTTPStream(response.StreamID)
 		refreshed, errRefresh := refreshCredential(cred, req.HostCallbackID)
 		if errRefresh != nil {
-			return hostHTTPStreamResponse{}, model, errRefresh
+			return hostHTTPStreamResponse{}, model, cred, errRefresh
 		}
 		cred = refreshed
 		persistCredentialBestEffort(req.AuthID, cred)
 		response, errOpen = openKiroStream(cred, payload, req.HostCallbackID)
 		if errOpen != nil {
-			return response, model, errOpen
+			return response, model, cred, errOpen
 		}
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		body, errRead := readAllHostHTTPStream(response.StreamID)
 		closeHostHTTPStream(response.StreamID)
 		if errRead != nil {
-			return hostHTTPStreamResponse{}, model, errRead
+			return hostHTTPStreamResponse{}, model, cred, errRead
 		}
-		return hostHTTPStreamResponse{}, model, upstreamStatusError("Kiro generateAssistantResponse failed", response.StatusCode, body)
+		return hostHTTPStreamResponse{}, model, cred, upstreamStatusError("Kiro generateAssistantResponse failed", response.StatusCode, body)
 	}
-	return response, model, nil
+	return response, model, cred, nil
 }
 
 func consumeKiroStream(streamID string, response hostHTTPStreamResponse, model string) error {
@@ -331,6 +337,14 @@ func (a *completionAccumulator) streamFrames(event eventstream.Event) [][]byte {
 	case "tool_input":
 		index := a.toolIndex[event.ToolUseID]
 		delta["tool_calls"] = []any{map[string]any{"index": index, "function": map[string]any{"arguments": event.ToolInput}}}
+	case "tool_stop":
+		// A whole object input never produced a tool_input delta, so the
+		// arguments have to be emitted here or the client sees none.
+		if !event.ReplacesInput || event.ToolInput == "" {
+			return nil
+		}
+		index := a.toolIndex[event.ToolUseID]
+		delta["tool_calls"] = []any{map[string]any{"index": index, "function": map[string]any{"arguments": event.ToolInput}}}
 	default:
 		return nil
 	}
@@ -375,7 +389,9 @@ func persistCredentialBestEffort(authID string, cred credential) {
 	if strings.TrimSpace(authID) == "" {
 		return
 	}
-	persistCredentialByNameBestEffort(authID+".json", cred)
+	// authID may already be a file-based ID ending in .json; the by-name
+	// persistence appends the suffix only when it is missing.
+	persistCredentialByNameBestEffort(authID, cred)
 }
 
 func countTokens(raw []byte) ([]byte, error) {

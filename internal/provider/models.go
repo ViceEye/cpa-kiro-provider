@@ -139,11 +139,11 @@ func modelsForAuth(raw []byte) ([]byte, error) {
 	if errCred != nil {
 		return okEnvelope(modelResponse{Provider: providerID, Models: staticModels()})
 	}
-	originalAuthID := strings.TrimSpace(req.AuthID)
-	if originalAuthID == "" {
-		originalAuthID = credentialID(cred)
+	// The credential's content identity stays content-derived; the host record
+	// ID can be file-based and must not leak into the stored JSON.
+	if validCredentialID(cred.AuthID) == "" {
+		cred.AuthID = credentialID(cred)
 	}
-	cred.AuthID = originalAuthID
 	var authUpdate authData
 	credentialUpdated := false
 	if credentialNeedsRefresh(cred) {
@@ -159,10 +159,9 @@ func modelsForAuth(raw []byte) ([]byte, error) {
 	}
 	if credentialUpdated {
 		if updated, errAuth := authDataFromCredential(cred); errAuth == nil {
-			if originalAuthID != "" {
-				updated.ID = originalAuthID
-				updated.FileName = originalAuthID + ".json"
-			}
+			// Empty ID/FileName lets the host keep the existing record identity.
+			updated.ID = ""
+			updated.FileName = ""
 			authUpdate = updated
 		}
 	}

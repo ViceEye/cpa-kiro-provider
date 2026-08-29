@@ -8,6 +8,7 @@
 *.test
 *.coverprofile
 coverage.out
+node_modules
 
 # Local credentials and CPA state
 /.env
@@ -35,3 +36,6 @@ coverage.out
 *.log
 .DS_Store
 Thumbs.db
+
+# Scratch scripts and probe payloads used during testing/debugging
+/temp/

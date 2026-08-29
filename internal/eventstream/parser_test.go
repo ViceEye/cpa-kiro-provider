@@ -58,6 +58,79 @@ func TestEventStreamFragmentationToolsAndUsage(t *testing.T) {
 	}
 }
 
+func TestEventStreamRepeatedToolMetadataStaysOneCall(t *testing.T) {
+	stream := append(eventFrame(t, map[string]any{"name": "shell", "toolUseId": "call_1", "input": ""}), eventFrame(t, map[string]any{"name": "shell", "toolUseId": "call_1", "input": `{"cm`})...)
+	stream = append(stream, eventFrame(t, map[string]any{"name": "shell", "toolUseId": "call_1", "input": `d":"echo ok"}`, "stop": true})...)
+	parser := &Parser{}
+	events, errFeed := parser.Feed(stream)
+	if errFeed != nil {
+		t.Fatal(errFeed)
+	}
+	starts := 0
+	var input string
+	for _, event := range events {
+		switch event.Type {
+		case "tool_start":
+			starts++
+		case "tool_input":
+			input += event.ToolInput
+		}
+	}
+	if starts != 1 || input != `{"cmd":"echo ok"}` {
+		t.Fatalf("tool starts=%d input=%q events=%#v", starts, input, events)
+	}
+}
+
+func TestEventStreamObjectInputReplacesInsteadOfConcatenating(t *testing.T) {
+	stream := eventFrame(t, map[string]any{"name": "shell", "toolUseId": "c1", "input": map[string]any{"cmd": "echo"}})
+	stream = append(stream, eventFrame(t, map[string]any{"toolUseId": "c1", "input": map[string]any{"cmd": "echo ok"}, "stop": true})...)
+	parser := &Parser{}
+	events, errFeed := parser.Feed(stream)
+	if errFeed != nil {
+		t.Fatal(errFeed)
+	}
+	var stop Event
+	inputDeltas := 0
+	for _, event := range events {
+		switch event.Type {
+		case "tool_input":
+			inputDeltas++
+		case "tool_stop":
+			stop = event
+		}
+	}
+	if stop.ToolInput != `{"cmd":"echo ok"}` {
+		t.Fatalf("tool_stop input = %q, want the last whole object", stop.ToolInput)
+	}
+	if !stop.ReplacesInput {
+		t.Fatalf("tool_stop should be marked as replacing input: %#v", stop)
+	}
+	if inputDeltas != 0 {
+		t.Fatalf("object input must not emit deltas, got %d", inputDeltas)
+	}
+}
+
+func TestEventStreamStringInputStillConcatenates(t *testing.T) {
+	stream := eventFrame(t, map[string]any{"name": "shell", "toolUseId": "c1", "input": `{"cm`})
+	stream = append(stream, eventFrame(t, map[string]any{"toolUseId": "c1", "input": `d":"echo ok"}`, "stop": true})...)
+	parser := &Parser{}
+	events, errFeed := parser.Feed(stream)
+	if errFeed != nil {
+		t.Fatal(errFeed)
+	}
+	for _, event := range events {
+		if event.Type != "tool_stop" {
+			continue
+		}
+		if event.ToolInput != `{"cmd":"echo ok"}` {
+			t.Fatalf("tool_stop input = %q", event.ToolInput)
+		}
+		if event.ReplacesInput {
+			t.Fatalf("streamed string input must not be marked as replacing: %#v", event)
+		}
+	}
+}
+
 func TestEventStreamRejectsCorruptAndTruncatedFrames(t *testing.T) {
 	frame := eventFrame(t, map[string]any{"content": "hello"})
 	corrupt := append([]byte(nil), frame...)

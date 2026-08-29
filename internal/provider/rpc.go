@@ -58,8 +58,6 @@ func loadedConfig() pluginConfig {
 
 func normalizeLoginMode(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "organization-browser", "organisation-browser", "idc-browser":
-		return "organization-browser"
 	case "aws-device", "device", "device-code":
 		return "aws-device"
 	default:
@@ -112,7 +110,7 @@ func registration(raw []byte) ([]byte, error) {
 			"Logo":             "https://kiro.dev/favicon.ico",
 			"ConfigFields": []any{
 				map[string]any{"Name": "import_mode", "Type": "enum", "EnumValues": []string{"reference", "copy"}, "Description": "Default credential import ownership mode."},
-				map[string]any{"Name": "login_mode", "Type": "enum", "EnumValues": []string{"kiro-browser", "organization-browser", "aws-device"}, "Description": "First-login flow. aws-device supports both Builder ID and organization accounts and is recommended for remote CPA servers."},
+				map[string]any{"Name": "login_mode", "Type": "enum", "EnumValues": []string{"kiro-browser", "aws-device"}, "Description": "First-login flow. aws-device supports Builder ID and organization accounts and is recommended for remote CPA servers."},
 				map[string]any{"Name": "static_models", "Type": "array", "Description": "Additional Kiro runtime model IDs."},
 				map[string]any{"Name": "api_region", "Type": "string", "Description": "Kiro runtime region, usually us-east-1; independent of the AWS SSO region."},
 				map[string]any{"Name": "sso_region", "Type": "string", "Description": "Fallback AWS SSO OIDC region."},
@@ -159,6 +157,9 @@ func executeCommandLine(raw []byte) ([]byte, error) {
 		if errAuth != nil {
 			return nil, errAuth
 		}
+		// Let the host derive the file-based record ID from FileName so the
+		// imported file, its manager record, and later auth.parse scans agree.
+		auth.ID = ""
 		auths = append(auths, auth)
 	}
 	message := fmt.Sprintf("Imported %d Kiro account(s) in %s mode.\n", len(auths), mode)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,11 +35,24 @@ func parseAuth(raw []byte) ([]byte, error) {
 		}
 		return nil, errParse
 	}
+	physicalName := strings.TrimSpace(req.FileName)
+	if physicalName == "" {
+		physicalName = filepath.Base(strings.TrimSpace(req.Path))
+	}
+	// Single-account files take the host's file-based record ID so the scanned
+	// record and the saved record agree, instead of duplicating the manager
+	// entry for one physical file. Multi-account files keep per-account
+	// content-hash IDs: a path-derived ID would collide across accounts.
+	blankIdentity := physicalName != "" && len(creds) == 1
 	auths := make([]authData, 0, len(creds))
 	for _, cred := range creds {
 		auth, errAuth := authDataFromCredential(cred)
 		if errAuth != nil {
 			return nil, errAuth
+		}
+		if blankIdentity {
+			auth.ID = ""
+			auth.FileName = physicalName
 		}
 		auths = append(auths, auth)
 	}
@@ -58,11 +72,11 @@ func refreshAuth(raw []byte) ([]byte, error) {
 	if errDecode != nil {
 		return errorEnvelope("invalid_auth", errDecode.Error(), false, http.StatusUnauthorized), nil
 	}
-	originalAuthID := strings.TrimSpace(req.AuthID)
-	if originalAuthID == "" {
-		originalAuthID = credentialID(cred)
+	// The credential's content identity stays content-derived. The host record
+	// ID can be a file-based ID and must never be written into the stored JSON.
+	if validCredentialID(cred.AuthID) == "" {
+		cred.AuthID = credentialID(cred)
 	}
-	cred.AuthID = originalAuthID
 	refreshed, errRefresh := refreshCredential(cred, req.HostCallbackID)
 	if errRefresh != nil {
 		return pluginErrorEnvelope(errRefresh), nil
@@ -75,9 +89,26 @@ func refreshAuth(raw []byte) ([]byte, error) {
 	if errAuth != nil {
 		return nil, errAuth
 	}
-	if originalAuthID != "" {
-		auth.ID = originalAuthID
-		auth.FileName = originalAuthID + ".json"
+	// Empty ID/FileName tells the host to keep the existing record identity.
+	auth.ID = ""
+	auth.FileName = ""
+	// Re-marshaling the credential drops fields the plugin does not model
+	// (disabled, priority, note, ...). Carry them over from the stored JSON.
+	var fresh map[string]any
+	var stored map[string]any
+	if json.Unmarshal(auth.StorageJSON, &fresh) == nil && json.Unmarshal(req.StorageJSON, &stored) == nil {
+		for key, value := range stored {
+			if _, credentialField := fresh[key]; !credentialField {
+				fresh[key] = value
+			}
+		}
+		auth.StorageJSON, _ = json.Marshal(fresh)
+	}
+	// Preserve host record attributes such as the auth file path.
+	for key, value := range req.Attributes {
+		if _, exists := auth.Attributes[key]; !exists {
+			auth.Attributes[key] = value
+		}
 	}
 	return okEnvelope(authRefreshResponse{Auth: auth, NextRefreshAfter: nextRefreshTime(refreshed)})
 }

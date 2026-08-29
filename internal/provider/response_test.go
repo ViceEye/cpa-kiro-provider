@@ -48,6 +48,28 @@ func TestConvertNonStreamResponse(t *testing.T) {
 	}
 }
 
+func TestConvertNonStreamResponseMergesRepeatedToolMetadata(t *testing.T) {
+	raw := append(responseEventFrame(t, map[string]any{"name": "shell", "toolUseId": "call_1", "input": ""}), responseEventFrame(t, map[string]any{"name": "shell", "toolUseId": "call_1", "input": `{"cm`})...)
+	raw = append(raw, responseEventFrame(t, map[string]any{"name": "shell", "toolUseId": "call_1", "input": `d":"echo ok"}`, "stop": true})...)
+	response, errConvert := convertNonStreamResponse(raw, "claude-sonnet-5")
+	if errConvert != nil {
+		t.Fatal(errConvert)
+	}
+	var object map[string]any
+	if errJSON := json.Unmarshal(response, &object); errJSON != nil {
+		t.Fatal(errJSON)
+	}
+	message := object["choices"].([]any)[0].(map[string]any)["message"].(map[string]any)
+	calls := message["tool_calls"].([]any)
+	if len(calls) != 1 {
+		t.Fatalf("tool call count = %d, response=%s", len(calls), response)
+	}
+	function := calls[0].(map[string]any)["function"].(map[string]any)
+	if function["arguments"] != `{"cmd":"echo ok"}` {
+		t.Fatalf("tool arguments = %#v", function["arguments"])
+	}
+}
+
 func responseEventFrame(t *testing.T, payload any) []byte {
 	t.Helper()
 	body, errJSON := json.Marshal(payload)

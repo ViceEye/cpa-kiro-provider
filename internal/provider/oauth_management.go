@@ -172,7 +172,7 @@ func browserResourceCallbackURL(req managementRequest) (*url.URL, error) {
 	}
 	path := strings.TrimRight(strings.TrimSpace(req.Path), "/")
 	basePath := strings.TrimRight(expected.Path, "/")
-	if path != basePath && path != basePath+"/signin/callback" {
+	if path != basePath && path != basePath+"/signin/callback" && path != basePath+"/oauth/callback" {
 		return nil, callbackStatusError(http.StatusBadRequest, "invalid_callback", "Kiro callback path does not match the configured redirect URI")
 	}
 	callback := *expected
@@ -206,7 +206,7 @@ func callbackMatchesRedirect(callbackURL *url.URL, redirectURI string) bool {
 	path := strings.TrimRight(callbackURL.Path, "/")
 	return strings.EqualFold(callbackURL.Scheme, expected.Scheme) &&
 		strings.EqualFold(callbackURL.Host, expected.Host) &&
-		(path == expected.Path || path == expected.Path+"/signin/callback")
+		(path == expected.Path || path == expected.Path+"/signin/callback" || path == expected.Path+"/oauth/callback")
 }
 
 func parseBrowserRedirectURI(raw string) (*url.URL, error) {
