@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ViceEye/cpa-kiro-provider/internal/chat"
+	"github.com/ViceEye/cpa-kiro-provider/internal/cline"
 	"github.com/ViceEye/cpa-kiro-provider/internal/eventstream"
 	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
 )
@@ -25,6 +26,9 @@ func executeRequest(raw []byte) ([]byte, error) {
 	var req executorRequest
 	if errUnmarshal := json.Unmarshal(raw, &req); errUnmarshal != nil {
 		return nil, errUnmarshal
+	}
+	if credentialTypeMarker(req.StorageJSON) == cline.TypeMarker {
+		return cline.Execute(raw)
 	}
 	payload, cred, model, response, errExecute := executeKiroNonStream(req)
 	_ = payload
@@ -106,6 +110,9 @@ func executeStream(raw []byte) ([]byte, error) {
 	var req executorRequest
 	if errUnmarshal := json.Unmarshal(raw, &req); errUnmarshal != nil {
 		return nil, errUnmarshal
+	}
+	if credentialTypeMarker(req.StorageJSON) == cline.TypeMarker {
+		return cline.ExecuteStream(raw)
 	}
 	if strings.TrimSpace(req.StreamID) == "" {
 		return errorEnvelope("executor_error", "stream_id is required", false, http.StatusInternalServerError), nil

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ViceEye/cpa-kiro-provider/internal/chat"
+	"github.com/ViceEye/cpa-kiro-provider/internal/cline"
 )
 
 var fallbackModels = []string{
@@ -134,6 +135,9 @@ func modelsForAuth(raw []byte) ([]byte, error) {
 	var req authModelRequest
 	if errUnmarshal := json.Unmarshal(raw, &req); errUnmarshal != nil {
 		return nil, errUnmarshal
+	}
+	if credentialTypeMarker(req.StorageJSON) == cline.TypeMarker {
+		return cline.ModelsForAuth(raw)
 	}
 	cred, errCred := decodeCredential(req.StorageJSON)
 	if errCred != nil {

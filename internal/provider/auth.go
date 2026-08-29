@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ViceEye/cpa-kiro-provider/internal/cline"
 	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
 )
 
@@ -15,6 +16,9 @@ func parseAuth(raw []byte) ([]byte, error) {
 	var req authParseRequest
 	if errUnmarshal := json.Unmarshal(raw, &req); errUnmarshal != nil {
 		return nil, errUnmarshal
+	}
+	if credentialTypeMarker(req.RawJSON) == cline.TypeMarker {
+		return cline.ParseAuth(raw)
 	}
 	if req.Provider != "" && !strings.EqualFold(req.Provider, providerID) {
 		return okEnvelope(authParseResponse{Handled: false})
@@ -67,6 +71,9 @@ func refreshAuth(raw []byte) ([]byte, error) {
 	var req authRefreshRequest
 	if errUnmarshal := json.Unmarshal(raw, &req); errUnmarshal != nil {
 		return nil, errUnmarshal
+	}
+	if credentialTypeMarker(req.StorageJSON) == cline.TypeMarker {
+		return cline.RefreshAuth(raw)
 	}
 	cred, errDecode := decodeCredential(req.StorageJSON)
 	if errDecode != nil {

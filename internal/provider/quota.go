@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ViceEye/cpa-kiro-provider/internal/cline"
 	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
 )
 
@@ -264,6 +265,32 @@ func loadKiroQuotas(callbackID string) ([]quotaAccount, error) {
 			accounts = append(accounts, account)
 			continue
 		}
+		// Cline credentials multiplex through this plugin — route their quota
+		// to the cline protocol layer.
+		if storageJSON, typeMarker := credentialStorageJSONByIndex(callbackID, entry.AuthIndex); typeMarker == cline.TypeMarker {
+			raw := mustJSON(map[string]any{
+				"Body":           mustJSON(map[string]any{"StorageJSON": json.RawMessage(storageJSON), "auth_index": entry.AuthIndex, "host_callback_id": callbackID}),
+				"HostCallbackID": callbackID,
+			})
+			clineRaw, errUsage := cline.Usage(raw)
+			if errUsage != nil {
+				account.Error = errUsage.Error()
+				accounts = append(accounts, account)
+				continue
+			}
+			clineAccounts, errCline := parseClineUsageEnvelope(clineRaw)
+			if errCline != nil {
+				account.Error = errCline.Error()
+			} else if len(clineAccounts) == 1 {
+				account = clineAccounts[0]
+				account.AuthIndex = entry.AuthIndex
+				account.Name = entry.Name
+			} else {
+				account.Error = "cline quota returned no account"
+			}
+			accounts = append(accounts, account)
+			continue
+		}
 		if errLoad := loadKiroQuotaAccount(&account, callbackID); errLoad != nil {
 			account.Error = errLoad.Error()
 		} else {
@@ -429,4 +456,44 @@ func jsonHeaders() http.Header {
 func mustJSON(value any) []byte {
 	raw, _ := json.Marshal(value)
 	return raw
+}
+
+
+// credentialStorageJSONByIndex fetches the raw auth-file JSON for an
+// auth_index and returns it together with the credential type marker.
+func credentialStorageJSONByIndex(callbackID, authIndex string) (string, string) {
+	result, err := callHostCall("host.auth.get", map[string]any{"auth_index": authIndex})
+	if err != nil {
+		return "", ""
+	}
+	var auth hostAuthGetResponse
+	if err := json.Unmarshal(result, &auth); err != nil {
+		return "", ""
+	}
+	return string(auth.JSON), credentialTypeMarker(auth.JSON)
+}
+
+// parseClineUsageEnvelope unwraps the cline.Usage management envelope into
+// quota accounts.
+func parseClineUsageEnvelope(raw []byte) ([]quotaAccount, error) {
+	var env struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			Body json.RawMessage `json:"Body"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil || !env.OK {
+		return nil, fmt.Errorf("cline quota envelope invalid")
+	}
+	var bodyStr string
+	if err := json.Unmarshal(env.Result.Body, &bodyStr); err != nil {
+		return nil, fmt.Errorf("cline quota body not a string")
+	}
+	var parsed struct {
+		Accounts []quotaAccount `json:"accounts"`
+	}
+	if err := json.Unmarshal([]byte(bodyStr), &parsed); err != nil {
+		return nil, fmt.Errorf("decode cline quota accounts: %w", err)
+	}
+	return parsed.Accounts, nil
 }

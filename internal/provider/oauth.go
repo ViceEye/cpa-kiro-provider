@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ViceEye/cpa-kiro-provider/internal/cline"
 	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
 )
 
@@ -72,6 +73,9 @@ func startLogin(raw []byte) ([]byte, error) {
 func startLoginInternal(raw []byte, req authLoginStartRequest) ([]byte, error) {
 	if json.Unmarshal(raw, &req) == nil {
 		mode := strings.ToLower(strings.TrimSpace(jsonx.String(req.Metadata, "login_mode")))
+		if mode == cline.TypeMarker || req.Provider == cline.TypeMarker {
+			return cline.LoginStart(raw)
+		}
 		if mode == "kiro-browser" || mode == "aws-device" {
 			config := loadedConfig()
 			applyOAuthOverrides(&config, req.Metadata)
@@ -134,6 +138,9 @@ func pollLogin(raw []byte) ([]byte, error) {
 		return nil, errUnmarshal
 	}
 	mode := strings.ToLower(strings.TrimSpace(jsonx.String(req.Metadata, "login_mode")))
+	if mode == cline.TypeMarker || req.Provider == cline.TypeMarker {
+		return cline.LoginPoll(raw)
+	}
 	if mode == "aws-device" || (mode == "" && jsonx.String(req.Metadata, "device_code") != "") {
 		return pollDeviceLoginRequest(req)
 	}
