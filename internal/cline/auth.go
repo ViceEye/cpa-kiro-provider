@@ -152,11 +152,12 @@ func ParseAuth(raw []byte) ([]byte, error) {
 	if err != nil {
 		return okEnvelope(authParseResponse{Handled: false})
 	}
-	refreshed, err := refreshCredential(cred, "")
-	if err != nil {
-		return pluginError(err), nil
+	if strings.TrimSpace(cred.RefreshToken) == "" {
+		return okEnvelope(authParseResponse{Handled: false})
 	}
-	auth, err := authDataFromCredential(refreshed)
+	// Pure parse — no network. The token is refreshed lazily on first use
+	// (executor/usage) so file scanning never depends on upstream reachability.
+	auth, err := authDataFromCredential(cred)
 	if err != nil {
 		return nil, err
 	}

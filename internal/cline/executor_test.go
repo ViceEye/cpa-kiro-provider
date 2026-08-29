@@ -49,8 +49,8 @@ func TestUnwrapDataEnvelopePassesThrough(t *testing.T) {
 }
 
 func TestUpstreamPayloadStripsPrefix(t *testing.T) {
-	payload := []byte(`{"model":"cline/z-ai/glm-5.3-flash","messages":[{"role":"user","content":"hi"}]}`)
-	upstream, err := upstreamPayload(payload, "cline/z-ai/glm-5.3-flash")
+	payload := []byte(`{"model":"kiro/z-ai/glm-5.3-flash","messages":[{"role":"user","content":"hi"}]}`)
+	upstream, err := upstreamPayload(payload, "kiro/z-ai/glm-5.3-flash")
 	if err != nil {
 		t.Fatal(err)
 	}

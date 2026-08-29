@@ -30,8 +30,11 @@ func statusErr(code, message string, retryable bool, status int) statusError {
 }
 
 // credential is the plugin's stored credential JSON (StorageJSON).
+// Type must stay the plugin's provider identity ("kiro") — CPA looks the
+// plugin up by it. Kind marks the upstream ("cline") for internal dispatch.
 type credential struct {
 	Type          string `json:"type"`
+	Kind          string `json:"kind,omitempty"`
 	Version       int    `json:"version"`
 	AuthID        string `json:"auth_id,omitempty"`
 	Email         string `json:"email,omitempty"`

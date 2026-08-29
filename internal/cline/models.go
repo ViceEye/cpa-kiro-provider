@@ -10,5 +10,5 @@ func ModelsForAuth(raw []byte) ([]byte, error) {
 		entry.ID = modelPrefix + model.ID
 		models = append(models, entry)
 	}
-	return okEnvelope(modelResponse{Provider: providerID, Models: models})
+	return okEnvelope(modelResponse{Provider: pluginProvider, Models: models})
 }
