@@ -75,8 +75,8 @@ func LoginStart(raw []byte) ([]byte, error) {
 }
 
 // LoginPoll completes the login: it accepts the pasted callback URL (or raw
-// code), exchanges it for tokens, persists the credential via host.auth.save
-// and returns the connection record for CPA's own login flow.
+// code), exchanges it for tokens, and returns the connection record for CPA's
+// own login flow. The console management handler owns persistence.
 func LoginPoll(raw []byte) ([]byte, error) {
 	var req struct {
 		Provider string         `json:"Provider"`
@@ -128,13 +128,6 @@ func LoginPoll(raw []byte) ([]byte, error) {
 	auth, err := authDataFromCredential(cred)
 	if err != nil {
 		return okEnvelope(map[string]any{"Status": "error", "Message": err.Error()})
-	}
-	// Persist under the credential's own file name; the host keys the record
-	// by file so re-logins stay stable.
-	if _, err := callHost("host.auth.save", map[string]any{
-		"name": auth.FileName, "json": json.RawMessage(auth.StorageJSON),
-	}); err != nil {
-		return okEnvelope(map[string]any{"Status": "error", "Message": "credential save failed: " + err.Error()})
 	}
 	return okEnvelope(map[string]any{
 		"Status":  "success",
@@ -208,7 +201,8 @@ func exchangeAuthorizationCode(code, callbackURL, idp string) (credential, error
 		expiresAt = time.Now().UTC().Add(time.Duration(expiresIn-60) * time.Second).Format(time.RFC3339)
 	}
 	return credential{
-		Type:         TypeMarker,
+		Type:         pluginProvider,
+		Kind:         TypeMarker,
 		Version:      1,
 		AccessToken:  parsed.Data.AccessToken,
 		RefreshToken: parsed.Data.RefreshToken,

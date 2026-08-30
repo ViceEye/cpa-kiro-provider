@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './style.css';
 import antigravityIcon from './assets/antigravity.svg';
 import claudeIcon from './assets/claude.svg';
+import clineIcon from './assets/cline.svg';
 import codexIcon from './assets/codex.svg';
 import geminiIcon from './assets/gemini.svg';
 import grokIcon from './assets/grok.svg';
@@ -24,6 +25,7 @@ const ICONS = {
   antigravity: antigravityIcon,
   xai: grokIcon,
   grok: grokIcon,
+  cline: clineIcon,
   kimi: kimiIcon,
   qwen: qwenIcon,
   vertex: vertexIcon,
@@ -36,6 +38,7 @@ const TYPE_COLORS = {
   aistudio: { bg: '#f0f2f5', text: '#2f343c' },
   claude: { bg: '#fbece4', text: '#c05621' },
   codex: { bg: '#eae7ff', text: '#3538d4' },
+  cline: { bg: '#dff3ee', text: '#246b5c' },
   kimi: { bg: '#dce8ff', text: '#0560cf' },
   antigravity: { bg: '#e0f7fa', text: '#006064' },
   xai: { bg: '#f3f4f6', text: '#111827', border: '1px solid #d1d5db' },
@@ -70,6 +73,15 @@ function RefreshIcon({ size = 15 }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
       <path d="M21 3v5h-5" />
+    </svg>
+  );
+}
+
+function BackIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M19 12H5" />
+      <path d="m12 19-7-7 7-7" />
     </svg>
   );
 }
@@ -712,7 +724,8 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
   const color = typeColor(providerKey);
   const label = typeLabel(providerKey);
   const icon = iconFor(providerKey);
-  const account = file.email || file.label || file.name || 'Kiro account';
+  const rawAccount = file.email || file.label || file.name || 'Kiro account';
+  const account = providerKey === 'cline' && normalizeKey(rawAccount) === 'kiro' ? 'Cline' : rawAccount;
   const fileName = file.name || '';
   const disabled = !!file.disabled;
   const isKiro = providerKey === 'kiro';
@@ -751,6 +764,7 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
     if (!isCodex) return;
     setCodexLoading(true);
     setCodexError('');
+    setCodexQuota(null);
     try {
       const data = await fetchCodexQuota(mgmtKey, file);
       setCodexQuota(data);
@@ -992,14 +1006,13 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
       ) : isCodex ? (
         codexQuota ? (
           <CodexQuotaSection quota={codexQuota} brandIcon={icon} />
-        ) : codexLoading ? (
-          <div className="quotaMeta quotaEmpty">正在加载额度…</div>
-        ) : codexError ? (
-          <div className="quotaMeta quotaEmpty">额度获取失败：{codexError}</div>
         ) : (
-          <button className="quotaTrigger" onClick={refreshCodex} disabled={!file.auth_index}>
-            {file.auth_index ? '点击此处刷新额度' : '该凭证缺少运行时 auth_index'}
-          </button>
+          <>
+            <button className="quotaTrigger" onClick={refreshCodex} disabled={!file.auth_index || codexLoading}>
+              {codexLoading ? '刷新中…' : file.auth_index ? '点击此处刷新额度' : '该凭证缺少运行时 auth_index'}
+            </button>
+            {codexError && !codexLoading && <QuotaSection account={{ error: codexError }} brandIcon={icon} />}
+          </>
         )
       ) : (
         <div className="quotaMeta quotaEmpty">暂无额度信号，发起一次请求后由 CPA 采集</div>
@@ -1088,7 +1101,85 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
   );
 }
 
-function OAuthPanel({ mgmtKey, onChanged }) {
+const OAUTH_PROVIDERS = {
+  kiro: {
+    label: 'Kiro',
+    title: 'Kiro OAuth',
+    description: '通过浏览器授权新增一个凭证',
+    icon: ICONS.kiro,
+    className: 'oauthProviderKiro',
+  },
+  cline: {
+    label: 'Cline',
+    title: 'Cline OAuth',
+    description: '通过浏览器授权新增一个凭证',
+    icon: clineIcon,
+    className: 'oauthProviderCline',
+  },
+};
+
+function OAuthBrandIcon({ provider, size = 22 }) {
+  const [failed, setFailed] = useState(false);
+  const item = OAUTH_PROVIDERS[provider];
+  return (
+    <span className={`oauthBrandIcon ${item.className}`}>
+      {failed ? (
+        <span className="oauthBrandFallback">{item.label.slice(0, 1)}</span>
+      ) : (
+        <img src={item.icon} alt="" width={size} height={size} onError={() => setFailed(true)} />
+      )}
+    </span>
+  );
+}
+
+function OAuthEntry({ onOpen }) {
+  return (
+    <button type="button" className="panel oauthEntry" onClick={onOpen}>
+      <span className="oauthEntryBrand"><OAuthBrandIcon provider="kiro" size={20} /></span>
+      <span className="oauthEntryCopy">
+        <strong>OAuth 登录</strong>
+        <span className="muted">通过浏览器授权新增一个凭证</span>
+      </span>
+      <span className="oauthEntryArrow" aria-hidden="true">→</span>
+    </button>
+  );
+}
+
+function OAuthProviderPage({ mgmtKey, onChanged, onBack }) {
+  const [provider, setProvider] = useState('');
+  return (
+    <section className="oauthPage">
+      <div className="panel oauthPageHead">
+        <button type="button" className="btn iconButton" onClick={provider ? () => setProvider('') : onBack} title="返回">
+          <BackIcon />
+        </button>
+        <div>
+          <h2>OAuth 登录</h2>
+          <span className="muted">选择要添加的凭证类型</span>
+        </div>
+      </div>
+
+      {provider ? (
+        <OAuthPanel provider={provider} mgmtKey={mgmtKey} onChanged={onChanged} onBack={() => setProvider('')} />
+      ) : (
+        <div className="oauthProviderGrid">
+          {Object.entries(OAUTH_PROVIDERS).map(([key, item]) => (
+            <button type="button" className={`oauthProviderCard ${item.className}`} key={key} onClick={() => setProvider(key)}>
+              <span className="oauthProviderIcon"><OAuthBrandIcon provider={key} /></span>
+              <span className="oauthProviderCopy">
+                <strong>{item.title}</strong>
+                <span>{item.description}</span>
+              </span>
+              <span className="oauthProviderArrow" aria-hidden="true">→</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function OAuthPanel({ provider, mgmtKey, onChanged, onBack }) {
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
   const [signinUrl, setSigninUrl] = useState('');
@@ -1129,21 +1220,27 @@ function OAuthPanel({ mgmtKey, onChanged }) {
     [mgmtKey, onChanged]
   );
 
-  // Step 1: ask the plugin for the real app.kiro.dev sign-in URL + state.
+  const providerInfo = OAUTH_PROVIDERS[provider];
+  const isCline = provider === 'cline';
+
+  // Step 1: ask the plugin for the provider sign-in URL + state.
   const startLogin = useCallback(async () => {
     setBusy(true);
     setStatus('启动中…');
     reset();
     try {
-      const started = await request('/console/oauth/start', mgmtKey, { method: 'POST', body: '{}' });
+      const started = await request('/console/oauth/start', mgmtKey, {
+        method: 'POST',
+        body: JSON.stringify(isCline ? { login_mode: 'cline' } : {}),
+      });
       if (!started.url || !started.state) throw Error('登录启动失败');
       const cleanURL = cleanOAuthURL(started.url);
       setSigninUrl(cleanURL);
       setState(started.state);
-      const browserFlow = /app\.kiro\.dev\/signin/i.test(cleanURL);
+      const browserFlow = isCline || /app\.kiro\.dev\/signin/i.test(cleanURL);
       setStatus(
         browserFlow
-          ? '打开登录链接，在浏览器完成登录后把跳转到的 localhost 回调 URL 粘贴到下方。'
+          ? `打开 ${providerInfo.label} 登录链接，在浏览器完成登录后把跳转到的 localhost 回调 URL 粘贴到下方。`
           : '打开设备验证链接并完成授权，面板会自动等待登录完成。'
       );
       window.open(cleanURL, '_blank', 'noopener');
@@ -1154,7 +1251,7 @@ function OAuthPanel({ mgmtKey, onChanged }) {
       setStatus(`失败：${e.message}`);
       setBusy(false);
     }
-  }, [mgmtKey]);
+  }, [isCline, mgmtKey, poll, providerInfo.label]);
 
   // Step 2: submit the pasted localhost callback URL. Org logins return a
   // device verification URL to open; personal logins carry the code directly.
@@ -1163,11 +1260,23 @@ function OAuthPanel({ mgmtKey, onChanged }) {
     if (!redirect) return;
     setStatus('提交回调 URL…');
     try {
-      const r = await request('/oauth/callback', mgmtKey, {
-        method: 'POST',
-        body: JSON.stringify({ redirect_url: redirect }),
-      });
-      if (r.status === 'continue' && r.url) {
+      const r = await request(
+        isCline ? `/console/oauth/status?state=${encodeURIComponent(state)}` : '/oauth/callback',
+        mgmtKey,
+        {
+          method: 'POST',
+          body: JSON.stringify(isCline ? { callback_url: redirect } : { redirect_url: redirect }),
+        }
+      );
+      if (r.status === 'success') {
+        setStatus('登录成功，已保存新凭证');
+        setBusy(false);
+        reset();
+        onChanged();
+      } else if (r.status === 'error') {
+        setStatus(`失败：${r.message || '未知错误'}`);
+        setBusy(false);
+      } else if (r.status === 'continue' && r.url) {
         setVerifyUrl(r.url);
         setUserCode(r.user_code || '');
         setStatus('组织登录：打开下方验证链接并确认设备代码，然后等待完成。');
@@ -1182,17 +1291,20 @@ function OAuthPanel({ mgmtKey, onChanged }) {
     } catch (e) {
       setStatus(`回调提交失败：${e.message}`);
     }
-  }, [callback, mgmtKey, poll, state]);
+  }, [callback, isCline, mgmtKey, poll, state]);
 
   const copy = (text) => navigator.clipboard?.writeText(text);
-  const browserFlow = /app\.kiro\.dev\/signin/i.test(signinUrl);
+  const browserFlow = isCline || /app\.kiro\.dev\/signin/i.test(signinUrl);
 
   return (
     <section className="panel oauthPanel">
-      <div className="oauthHead">
+      <div className="oauthFlowHead">
+        <button type="button" className="btn iconButton" onClick={onBack} title="返回登录方式">
+          <BackIcon />
+        </button>
         <div>
-          <h2>OAuth 登录</h2>
-          <span className="muted">通过浏览器授权新增一个 Kiro 凭证（远程 CPA 用复制回调 URL 方式）</span>
+          <div className="oauthProviderTitle"><OAuthBrandIcon provider={provider} size={18} /><h3>{providerInfo.title}</h3></div>
+          <span className="muted">通过浏览器授权新增一个凭证</span>
         </div>
         <button className="btn btnPrimary" onClick={startLogin} disabled={busy && !signinUrl}>
           {busy && !signinUrl ? '进行中…' : signinUrl ? '重新开始' : '开始登录'}
@@ -1218,7 +1330,7 @@ function OAuthPanel({ mgmtKey, onChanged }) {
                 rows={2}
                 value={callback}
                 onChange={(e) => setCallback(e.target.value)}
-                placeholder="http://localhost:3128/signin/callback?..."
+                placeholder={isCline ? 'http://localhost:3128/auth?...' : 'http://localhost:3128/signin/callback?...'}
               />
               <div className="oauthActions">
                 <button className="btn btnPrimary" onClick={submitCallback} disabled={!callback.trim()}>提交回调 URL</button>
@@ -1253,6 +1365,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [refreshAllTick, setRefreshAllTick] = useState(0);
   const [refreshingAll, setRefreshingAll] = useState(false);
+  const [oauthPageOpen, setOauthPageOpen] = useState(false);
 
   useEffect(() => {
     syncCPATheme();
@@ -1354,7 +1467,11 @@ function App() {
         </section>
       )}
 
-      {key && <OAuthPanel mgmtKey={key} onChanged={load} />}
+      {key && oauthPageOpen ? (
+        <OAuthProviderPage mgmtKey={key} onChanged={load} onBack={() => setOauthPageOpen(false)} />
+      ) : (
+        <>
+          {key && <OAuthEntry onOpen={() => setOauthPageOpen(true)} />}
 
       <section className="panel toolbar">
         <div>
@@ -1420,6 +1537,8 @@ function App() {
           <div className="empty">{key ? '没有匹配的认证文件' : '请输入 Management Key，然后点击保存'}</div>
         )}
       </section>
+        </>
+      )}
     </div>
   );
 }

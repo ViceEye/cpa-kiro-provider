@@ -14,7 +14,7 @@ const (
 	refreshPath = "/api/v1/auth/refresh"
 	mePath      = "/api/v1/users/me"
 	balanceFmt  = "/api/v1/users/%s/balance"
-	modelPrefix = "cline/"
+	modelPrefix = "kiro/"
 )
 
 // clineIdentityHeaders mirrors the identity headers the Cline client sends.

@@ -7,12 +7,12 @@ CLIProxyAPI. It imports existing Kiro IDE, kiro-cli, Amazon Q, and AWS SSO
 credentials and exposes Kiro runtime models through the normal CPA API.
 
 The production runtime consists only of CLIProxyAPI and
-`kiro-provider-v0.7.7.so`. Kiro Gateway is the protocol reference and is not a
+`kiro-provider-v0.8.0.so`. Kiro Gateway is the protocol reference and is not a
 sidecar or runtime dependency.
 
 ## Current release
 
-### v0.7.7 - 2026-08-29
+### v0.8.0 - 2026-08-30
 
 Fixes:
 
@@ -30,6 +30,9 @@ Fixes:
   refresh and model-discovery updates.
 - The console closes the relogin flow steps automatically after a successful
   relogin instead of leaving the login URL and callback box open.
+- Adds an in-plugin OAuth provider selection page for Kiro and Cline.
+- Adds Cline browser OAuth callback handling and stores Cline credentials with
+  the plugin provider marker plus the Cline kind marker.
 
 Verification completed for this release:
 
@@ -278,7 +281,7 @@ docker build --output type=local,dest=dist .
 The artifact is written to:
 
 ```text
-dist/linux/amd64/kiro-provider-v0.7.7.so
+dist/linux/amd64/kiro-provider-v0.8.0.so
 ```
 
 ## Install
@@ -288,11 +291,11 @@ subdirectory. Copy the versioned library using either layout:
 
 ```bash
 # Flat layout, such as the default /CLIProxyAPI/plugins mount:
-cp dist/linux/amd64/kiro-provider-v0.7.7.so plugins/
+cp dist/linux/amd64/kiro-provider-v0.8.0.so plugins/
 
 # Or platform-specific layout:
 mkdir -p plugins/linux/amd64
-cp dist/linux/amd64/kiro-provider-v0.7.7.so plugins/linux/amd64/
+cp dist/linux/amd64/kiro-provider-v0.8.0.so plugins/linux/amd64/
 ```
 
 Enable the plugin in `config.yaml`:

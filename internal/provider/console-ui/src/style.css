@@ -87,6 +87,19 @@
   box-sizing: border-box;
 }
 
+/* Reserve the vertical scrollbar gutter so cards do not reflow when the page
+   grows from one viewport height to a scrollable page. */
+html {
+  min-width: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+body {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
 /* Keep the page hidden until the flash-fix script stamps
    data-cpa-theme on <html>. Without this guard the first frame would
    render with no theme tokens, falling back to the browser default
@@ -696,6 +709,184 @@ body {
 }
 
 /* ----- oauth panel ----- */
+.oauthEntry {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+  margin-bottom: 16px;
+  font: inherit;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-hover) var(--ease-out-strong), box-shadow var(--dur-hover) var(--ease-out-strong), transform var(--dur-hover) var(--ease-out-strong);
+}
+
+.oauthEntry:hover {
+  border-color: var(--border-hover);
+  box-shadow: 0 12px 26px -14px rgb(0 0 0 / 0.16);
+  transform: translateY(-1px);
+}
+
+.oauthEntryBrand,
+.oauthProviderIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: var(--bg-tertiary);
+}
+
+.oauthEntryCopy,
+.oauthProviderCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.oauthEntryCopy strong {
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.oauthEntryArrow,
+.oauthProviderArrow {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.oauthPage {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-height: 300px;
+}
+
+.oauthPageHead,
+.oauthFlowHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.oauthPageHead > div,
+.oauthFlowHead > div {
+  min-width: 0;
+}
+
+.oauthPageHead h2,
+.oauthFlowHead h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-weight: 650;
+}
+
+.oauthPageHead h2 {
+  font-size: 20px;
+}
+
+.oauthFlowHead h3 {
+  font-size: 17px;
+}
+
+.oauthFlowHead > .btnPrimary {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.oauthProviderTitle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 3px;
+}
+
+.oauthBrandIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+}
+
+.oauthBrandIcon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.oauthBrandFallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 7px;
+  color: var(--primary-contrast);
+  background: var(--primary-color);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.oauthProviderGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.oauthProviderCard {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 64px;
+  min-height: 64px;
+  gap: 13px;
+  padding: 12px 18px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
+  color: var(--text-primary);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--dur-hover) var(--ease-out-strong), box-shadow var(--dur-hover) var(--ease-out-strong), transform var(--dur-hover) var(--ease-out-strong);
+}
+
+.oauthProviderCard:hover {
+  border-color: var(--border-hover);
+  box-shadow: 0 12px 26px -14px rgb(0 0 0 / 0.16);
+  transform: translateY(-1px);
+}
+
+.oauthProviderCopy strong {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.oauthProviderCopy span {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.oauthEntryBrand,
+.oauthProviderKiro .oauthProviderIcon {
+  background: color-mix(in srgb, #8b5cf6 12%, var(--bg-tertiary));
+}
+
+.oauthProviderCline .oauthProviderIcon {
+  background: color-mix(in srgb, #10b981 12%, var(--bg-tertiary));
+}
+
 .oauthPanel {
   display: flex;
   flex-direction: column;
@@ -1176,6 +1367,16 @@ body {
   }
   .oauthPanel {
     flex-wrap: wrap;
+  }
+  .oauthProviderGrid {
+    grid-template-columns: 1fr;
+  }
+  .oauthFlowHead {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .oauthFlowHead > .btnPrimary {
+    margin-left: 42px;
   }
   .panelRow {
     flex-direction: column;

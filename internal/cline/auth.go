@@ -73,6 +73,8 @@ func authDataFromCredential(cred credential) (authData, error) {
 	if cred.AuthID == "" {
 		cred.AuthID = credentialID(cred)
 	}
+	cred.Type = pluginProvider
+	cred.Kind = TypeMarker
 	storage, err := json.Marshal(cred)
 	if err != nil {
 		return authData{}, err

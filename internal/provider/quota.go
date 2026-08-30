@@ -70,8 +70,9 @@ func registerManagement() ([]byte, error) {
 				"Path":        "plugins/kiro-provider/credentials",
 				"Description": "Returns sanitized CPA credential records and request statistics.",
 			},
-			map[string]any{"Method": http.MethodPost, "Path": "plugins/kiro-provider/console/oauth/start", "Description": "Starts Kiro OAuth from the Kiro Console."},
-			map[string]any{"Method": http.MethodGet, "Path": "plugins/kiro-provider/console/oauth/status", "Description": "Polls Kiro Console OAuth."},
+			map[string]any{"Method": http.MethodPost, "Path": "plugins/kiro-provider/console/oauth/start", "Description": "Starts provider OAuth from the Kiro Console."},
+			map[string]any{"Method": http.MethodGet, "Path": "plugins/kiro-provider/console/oauth/status", "Description": "Polls provider OAuth from the Kiro Console."},
+			map[string]any{"Method": http.MethodPost, "Path": "plugins/kiro-provider/console/oauth/status", "Description": "Submits a browser OAuth callback from the Kiro Console."},
 			map[string]any{
 				"Method":      http.MethodPost,
 				"Path":        "plugins/kiro-provider/oauth/callback",
