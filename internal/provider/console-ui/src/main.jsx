@@ -51,6 +51,90 @@ const iconFor = (key) => ICONS[key] || null;
 const typeLabel = (key) => (key ? key.charAt(0).toUpperCase() + key.slice(1) : 'Unknown');
 const esc = (v) => String(v ?? '');
 
+function ModelClusterIcon({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="5" width="6" height="6" rx="1.5" />
+      <rect x="15" y="5" width="6" height="6" rx="1.5" />
+      <rect x="9" y="13" width="6" height="6" rx="1.5" />
+      <path d="M9 8h6" />
+      <path d="M12 11v2" />
+      <path d="M7.5 11v2" />
+      <path d="M16.5 11v2" />
+    </svg>
+  );
+}
+
+function RefreshIcon({ size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+      <path d="M21 3v5h-5" />
+    </svg>
+  );
+}
+
+function DownloadIcon({ size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 15V3" />
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <path d="m7 10 5 5 5-5" />
+    </svg>
+  );
+}
+
+function TrashIcon({ size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 6h18" />
+      <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+      <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+      <line x1="10" x2="10" y1="11" y2="17" />
+      <line x1="14" x2="14" y1="11" y2="17" />
+    </svg>
+  );
+}
+
+function syncCPAFrameBackground() {
+  if (window.parent === window || !window.frameElement) return;
+  try {
+    const parentRoot = window.parent.document.documentElement;
+    const parentStyles = window.parent.getComputedStyle(parentRoot);
+    const background =
+      parentStyles.getPropertyValue('--bg-secondary').trim() ||
+      window.parent.getComputedStyle(window.parent.document.body).backgroundColor;
+    if (!background) return;
+
+    window.frameElement.style.background = background;
+    let hostElement = window.frameElement.parentElement;
+    while (hostElement) {
+      hostElement.style.background = background;
+      if (hostElement.tagName === 'MAIN') break;
+      hostElement = hostElement.parentElement;
+    }
+  } catch {
+    // Cross-origin embedding: the iframe shell remains host-controlled.
+  }
+}
+
+function syncCPATheme() {
+  const root = document.documentElement;
+  const systemTheme = window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'white';
+  let theme = systemTheme;
+  try {
+    if (window.parent !== window) {
+      const hostTheme = window.parent.document.documentElement.getAttribute('data-theme');
+      theme = hostTheme === 'dark' ? 'dark' : 'white';
+    }
+  } catch {
+    // Cross-origin embedding: keep the system theme fallback.
+  }
+  syncCPAFrameBackground();
+  root.setAttribute('data-cpa-theme', theme);
+  return theme;
+}
+
 async function request(path, key, options = {}) {
   const base = options.base ?? API;
   const response = await fetch(base + path, {
@@ -64,6 +148,21 @@ async function request(path, key, options = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw Error(data.message || data.error || `HTTP ${response.status}`);
   return data;
+}
+
+async function downloadAuthFile(name, key) {
+  const response = await fetch(
+    `${MGMT}/auth-files/download?name=${encodeURIComponent(name)}`,
+    { headers: { Authorization: `Bearer ${key}` } }
+  );
+  if (!response.ok) throw Error(`HTTP ${response.status}`);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 // Some management-panel paths HTML-escape query separators. OAuth URLs must
@@ -512,6 +611,26 @@ function formatDate(iso) {
   return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+function formatFileSize(value) {
+  const size = Number(value);
+  if (!Number.isFinite(size) || size <= 0) return '-';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function formatModified(value) {
+  const normalized = typeof value === 'string' ? value.trim() : value;
+  if (normalized === '' || normalized == null) return '';
+  const raw = Number(normalized);
+  const date = Number.isFinite(raw)
+    ? new Date(raw < 1e12 ? raw * 1000 : raw)
+    : new Date(normalized);
+  if (Number.isNaN(date.getTime())) return '';
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(date.getDate())}/${p(date.getMonth() + 1)}/${date.getFullYear()}, ${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`;
+}
+
 // Detect provider from a CPA auth-file id (e.g. "codex-...", "kiro-...").
 function providerFromId(id) {
   const m = String(id || '').match(/^([a-z]+)-/i);
@@ -543,6 +662,11 @@ function normalizeAuthFiles(files) {
       recent_requests: Array.isArray(f.recent_requests) ? f.recent_requests : null,
       model_quotas: f.model_quotas || null,
       id_token: f.id_token || null,
+      size: Number(f.size) || 0,
+      modified: f.modified ?? f.modtime ?? f.updated_at ?? f.last_refresh ?? '',
+      priority: Number.isSafeInteger(Number(f.priority)) ? Number(f.priority) : undefined,
+      weight: Number.isSafeInteger(Number(f.weight)) ? Number(f.weight) : undefined,
+      note: typeof f.note === 'string' ? f.note.trim() : '',
     };
     const existing = byKey.get(dedupKey);
     if (!existing) {
@@ -554,6 +678,11 @@ function normalizeAuthFiles(files) {
       existing.failed = Math.max(existing.failed, mapped.failed);
       existing.recent_requests = existing.recent_requests || mapped.recent_requests;
       existing.model_quotas = existing.model_quotas || mapped.model_quotas;
+      existing.size = existing.size || mapped.size;
+      existing.modified = existing.modified || mapped.modified;
+      existing.priority ??= mapped.priority;
+      existing.weight ??= mapped.weight;
+      existing.note = existing.note || mapped.note;
       const sameRegistration =
         String(existing.path || '').trim() === String(mapped.path || '').trim() &&
         String(existing.auth_index || '').trim() === String(mapped.auth_index || '').trim();
@@ -602,6 +731,12 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
   const [codexQuota, setCodexQuota] = useState(null);
   const [codexLoading, setCodexLoading] = useState(false);
   const [codexError, setCodexError] = useState('');
+  const [selected, setSelected] = useState(false);
+  const [models, setModels] = useState(null);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [actionError, setActionError] = useState('');
 
   // 收起重新登录流程的三个步骤框（成功后调用，保留状态提示文案）。
   const closeReloginFlow = useCallback(() => {
@@ -649,6 +784,63 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
       setQuotaLoading(false);
     }
   }, [mgmtKey, file.auth_index, file.name, isKiro]);
+
+  const showModels = useCallback(async () => {
+    setModelsLoading(true);
+    setActionError('');
+    try {
+      const data = await request(`/auth-files/models?name=${encodeURIComponent(file.name)}`, mgmtKey, { base: MGMT });
+      setModels(Array.isArray(data.models) ? data.models : []);
+    } catch (e) {
+      setActionError(`模型获取失败：${e.message}`);
+    } finally {
+      setModelsLoading(false);
+    }
+  }, [file.name, mgmtKey]);
+
+  const downloadFile = useCallback(async () => {
+    setActionError('');
+    try {
+      await downloadAuthFile(file.name, mgmtKey);
+    } catch (e) {
+      setActionError(`下载失败：${e.message}`);
+    }
+  }, [file.name, mgmtKey]);
+
+  const toggleStatus = useCallback(async () => {
+    setStatusUpdating(true);
+    setActionError('');
+    try {
+      await request('/auth-files/status', mgmtKey, {
+        base: MGMT,
+        method: 'PATCH',
+        body: JSON.stringify({ name: file.name, disabled: !disabled }),
+      });
+      onChanged();
+    } catch (e) {
+      setActionError(`状态更新失败：${e.message}`);
+    } finally {
+      setStatusUpdating(false);
+    }
+  }, [disabled, file.name, mgmtKey, onChanged]);
+
+  const deleteFile = useCallback(async () => {
+    if (!window.confirm(`确定删除认证文件“${file.name}”吗？`)) return;
+    setDeleting(true);
+    setActionError('');
+    try {
+      await request('/auth-files', mgmtKey, {
+        base: MGMT,
+        method: 'DELETE',
+        body: JSON.stringify({ names: [file.name] }),
+      });
+      onChanged();
+    } catch (e) {
+      setActionError(`删除失败：${e.message}`);
+    } finally {
+      setDeleting(false);
+    }
+  }, [file.name, mgmtKey, onChanged]);
 
   // Broadcast quota refresh: bump refreshAll from the toolbar to refresh every
   // card's quota at once (Kiro -> /quotaRequest, Codex -> live usage).
@@ -725,6 +917,13 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
   return (
     <article className={`card ${disabled ? 'cardDisabled' : ''}`}>
       <header className="head">
+        <input
+          className="selection"
+          type="checkbox"
+          checked={selected}
+          onChange={(event) => setSelected(event.target.checked)}
+          aria-label="选择认证文件"
+        />
         <div className="avatar" style={avatarStyle}>
           {icon ? <img src={icon} alt="" className="avatarImage" /> : <span className="avatarFallback">{label.slice(0, 1)}</span>}
         </div>
@@ -745,6 +944,28 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
       {file.duplicate_count > 1 && (
         <p className="dupNote">⚠ 该凭证在 CPA 中注册了 {file.duplicate_count} 次（同一文件），已合并显示。建议在认证文件里删除多余条目。</p>
       )}
+
+      <div className="metaRow">
+        <span>{formatFileSize(file.size)}</span>
+        {formatModified(file.modified) && (
+          <>
+            <span className="metaDivider" aria-hidden="true">·</span>
+            <span>{formatModified(file.modified)}</span>
+          </>
+        )}
+        {file.priority !== undefined && (
+          <>
+            <span className="metaDivider" aria-hidden="true">·</span>
+            <span className="metaPriority">优先级 {file.priority}</span>
+          </>
+        )}
+        {file.weight !== undefined && (
+          <>
+            <span className="metaDivider" aria-hidden="true">·</span>
+            <span className="metaWeight">权重 {file.weight}</span>
+          </>
+        )}
+      </div>
 
       <div className="health">
         <div className="healthHead">
@@ -784,20 +1005,59 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
         <div className="quotaMeta quotaEmpty">暂无额度信号，发起一次请求后由 CPA 采集</div>
       )}
 
+      {models && (
+        <div className="modelsPanel">
+          <div className="modelsHead">
+            <strong>支持的模型</strong>
+            <button className="modelsClose" onClick={() => setModels(null)} aria-label="关闭模型列表">×</button>
+          </div>
+          {models.length ? (
+            <div className="modelsList">
+              {models.map((model) => (
+                <div className="modelItem" key={model.id || model.model_id}>
+                  <span>{model.display_name || model.id || model.model_id}</span>
+                  {(model.display_name && model.id && model.display_name !== model.id) && <code>{model.id}</code>}
+                </div>
+              ))}
+            </div>
+          ) : <div className="quotaEmpty">该凭证暂无可用模型</div>}
+        </div>
+      )}
+
       <footer className="actions">
         <div className="actionsMain">
+          <button className="btn modelButton" onClick={showModels} disabled={modelsLoading} title="查看支持的模型">
+            {modelsLoading ? '加载中…' : <><ModelClusterIcon size={14} /><span>模型</span></>}
+          </button>
           <button
             className="btn iconButton"
             onClick={isKiro ? refreshQuota : isCodex ? refreshCodex : onChanged}
             title="刷新额度"
             disabled={quotaLoading || codexLoading}
-          >↻</button>
+          ><RefreshIcon /></button>
+          <button className="btn iconButton" onClick={downloadFile} title="下载认证文件"><DownloadIcon /></button>
+          <button className="btn iconButton dangerButton" onClick={deleteFile} title="删除认证文件" disabled={deleting}>
+            {deleting ? '…' : <TrashIcon />}
+          </button>
           {isKiro && (
-            <button className="btn iconButton" onClick={startRelogin} title="重新登录">⟳</button>
+            <button className="btn iconButton" onClick={startRelogin} title="重新登录"><RefreshIcon /></button>
           )}
         </div>
-        {relogin && <span className="reloginNote">{relogin}</span>}
+        <div className="toggleWrap">
+          <span className="toggleLabel">启用</span>
+          <button
+            className={`toggle ${disabled ? '' : 'checked'}`}
+            role="switch"
+            aria-checked={!disabled}
+            onClick={toggleStatus}
+            disabled={statusUpdating}
+            title={disabled ? '启用认证文件' : '停用认证文件'}
+          >
+            <span className="toggleThumb" />
+          </button>
+        </div>
       </footer>
+      {(relogin || actionError) && <div className="reloginNote">{relogin || actionError}</div>}
       {reloginUrl && (
         <div className="oauthFlow reloginFlow">
           <div className="oauthStep">
@@ -993,6 +1253,30 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [refreshAllTick, setRefreshAllTick] = useState(0);
   const [refreshingAll, setRefreshingAll] = useState(false);
+
+  useEffect(() => {
+    syncCPATheme();
+    const mediaQuery = window.matchMedia?.('(prefers-color-scheme: dark)');
+    const mediaListener = () => {
+      if (window.parent === window) syncCPATheme();
+    };
+    mediaQuery?.addEventListener('change', mediaListener);
+
+    let observer;
+    try {
+      if (window.parent !== window) {
+        observer = new MutationObserver(syncCPATheme);
+        observer.observe(window.parent.document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+      }
+    } catch {
+      // Cross-origin embedding: observer is unavailable.
+    }
+
+    return () => {
+      mediaQuery?.removeEventListener('change', mediaListener);
+      observer?.disconnect();
+    };
+  }, []);
 
   const refreshAllQuotas = useCallback(() => {
     setRefreshAllTick((n) => n + 1);
