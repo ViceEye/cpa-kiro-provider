@@ -7,10 +7,11 @@ import (
 )
 
 const (
-	providerID    = "kiro"
-	pluginName    = "kiro-provider"
-	pluginVersion = "0.8.0"
+	providerID    = "nexus"
+	pluginName    = "cpa-provider-nexus"
+	pluginVersion = "0.9.0"
 	defaultRegion = "us-east-1"
+	nexusLogoPath = "/v0/resource/plugins/" + pluginName + "/icon.svg"
 
 	defaultSSOStartURL    = "https://view.awsapps.com/start"
 	defaultLoginMode      = "kiro-browser"
@@ -71,6 +72,7 @@ type authData struct {
 
 type credential struct {
 	Type           string   `json:"type,omitempty"`
+	Kind           string   `json:"kind,omitempty"`
 	Version        int      `json:"version"`
 	AuthID         string   `json:"auth_id,omitempty"`
 	AuthType       string   `json:"auth_type"`

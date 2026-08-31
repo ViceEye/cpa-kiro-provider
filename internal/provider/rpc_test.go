@@ -33,7 +33,7 @@ func TestApplyConfigAcceptsCompleteCPAYAML(t *testing.T) {
 	applyConfig([]byte(`
 plugins:
   configs:
-    kiro-provider:
+    cpa-provider-nexus:
       import_mode: copy
       api_region: eu-west-1
       static_models:

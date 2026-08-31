@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ViceEye/cpa-kiro-provider/internal/cline"
-	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
+	"github.com/ViceEye/cpa-provider-nexus/internal/cline"
+	"github.com/ViceEye/cpa-provider-nexus/internal/jsonx"
 )
 
 func parseAuth(raw []byte) ([]byte, error) {

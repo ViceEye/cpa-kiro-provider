@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ViceEye/cpa-kiro-provider/internal/cline"
-	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
+	"github.com/ViceEye/cpa-provider-nexus/internal/cline"
+	"github.com/ViceEye/cpa-provider-nexus/internal/jsonx"
 )
 
 var deviceLoginPolls = struct {
@@ -112,7 +112,7 @@ func rewriteOAuthURLToConsole(raw []byte, baseURL string) []byte {
 	if strings.TrimSpace(baseURL) == "" {
 		return raw
 	}
-	started.URL = "/management.html#/plugin-pages/kiro-provider/0"
+	started.URL = "/management.html#/plugin-pages/cpa-provider-nexus/0"
 	env.Result = mustJSON(started)
 	return mustJSON(env)
 }

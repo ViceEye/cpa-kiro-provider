@@ -6,15 +6,13 @@ import (
 )
 
 const (
-	providerID = "cline"
-
 	apiBase     = "https://api.cline.bot"
 	chatPath    = "/api/v1/chat/completions"
 	modelsPath  = "/api/v1/models"
 	refreshPath = "/api/v1/auth/refresh"
 	mePath      = "/api/v1/users/me"
 	balanceFmt  = "/api/v1/users/%s/balance"
-	modelPrefix = "kiro/"
+	modelPrefix = "nexus/"
 )
 
 // clineIdentityHeaders mirrors the identity headers the Cline client sends.
@@ -30,8 +28,8 @@ func statusErr(code, message string, retryable bool, status int) statusError {
 }
 
 // credential is the plugin's stored credential JSON (StorageJSON).
-// Type must stay the plugin's provider identity ("kiro") — CPA looks the
-// plugin up by it. Kind marks the upstream ("cline") for internal dispatch.
+// Type stays the plugin's provider identity ("nexus"). Kind marks the Cline
+// upstream for internal dispatch.
 type credential struct {
 	Type          string `json:"type"`
 	Kind          string `json:"kind,omitempty"`
@@ -150,17 +148,17 @@ type modelResponse struct {
 }
 
 type executorRequest struct {
-	AuthID          string              `json:"AuthID"`
-	AuthProvider    string              `json:"AuthProvider"`
-	Model           string              `json:"Model"`
-	Format          string              `json:"Format"`
-	Stream          bool                `json:"Stream"`
-	Headers         http.Header         `json:"Headers"`
-	SourceFormat    string              `json:"SourceFormat"`
-	Payload         []byte              `json:"Payload"`
-	StorageJSON     []byte              `json:"StorageJSON"`
-	StreamID        string              `json:"stream_id,omitempty"`
-	HostCallbackID  string              `json:"host_callback_id,omitempty"`
+	AuthID         string      `json:"AuthID"`
+	AuthProvider   string      `json:"AuthProvider"`
+	Model          string      `json:"Model"`
+	Format         string      `json:"Format"`
+	Stream         bool        `json:"Stream"`
+	Headers        http.Header `json:"Headers"`
+	SourceFormat   string      `json:"SourceFormat"`
+	Payload        []byte      `json:"Payload"`
+	StorageJSON    []byte      `json:"StorageJSON"`
+	StreamID       string      `json:"stream_id,omitempty"`
+	HostCallbackID string      `json:"host_callback_id,omitempty"`
 }
 
 type executorResponse struct {

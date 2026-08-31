@@ -1,14 +1,14 @@
-# kiro-provider Agent 指南
+# cpa-provider-nexus Agent 指南
 
-CLIProxyAPI（CPA）的独立 Linux 原生插件（AGPL-3.0），把 Kiro 运行时模型通过
-标准 OpenAI Chat Completions API 暴露出去。仓库：
-<https://github.com/ViceEye/cpa-kiro-provider>
+CLIProxyAPI（CPA）的独立 Linux 原生插件（AGPL-3.0），以 `nexus` Provider
+统一接入不同认证与模型来源。当前支持 Kiro 和 Cline。仓库：
+<https://github.com/ViceEye/cpa-provider-nexus>
 
 ## 目录结构
 
 | 路径 | 用途 |
 | --- | --- |
-| `cmd/kiro-provider/` | 插件入口。C ABI（`cliproxy_plugin_init` 等），通过 JSON 信封 `{ok, result, error}` 与 CPA 宿主双向 RPC |
+| `cmd/cpa-provider-nexus/` | 插件入口。C ABI（`cliproxy_plugin_init` 等），通过 JSON 信封 `{ok, result, error}` 与 CPA 宿主双向 RPC |
 | `internal/provider/` | 核心：方法分发（`handler.go`）、OAuth/登录（`oauth.go`、`oauth_management.go`、`console_oauth.go`、`relogin.go`）、凭据（`credentials.go`、`auth.go`）、执行（`executor.go`）、模型（`models.go`）、配额（`quota.go`）、管理路由（`service.go`、`stats.go`） |
 | `internal/provider/console/` | 内嵌控制台成品（单文件 `index.html`，go:embed 进 `.so`） |
 | `internal/provider/console-ui/` | 控制台 React/Vite 源码（`src/main.jsx`） |
@@ -52,7 +52,7 @@ Copy-Item dist\index.html ..\console\index.html -Force
 `.so` 用 Docker 构建（同时执行 gofmt / go vet / go test，Docker Desktop 需在运行）：
 
 ```powershell
-$cfg = Join-Path $env:TEMP ("kp_dockercfg_" + [guid]::NewGuid().ToString("N"))
+$cfg = Join-Path $env:TEMP ("nexus_dockercfg_" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $cfg | Out-Null
 $env:DOCKER_CONFIG = $cfg
 docker build --output type=local,dest=dist .
@@ -64,7 +64,7 @@ docker build --output type=local,dest=dist .
 服务器部署按 `docs/knowledge.md` 的检查清单执行；**服务器部署与 Git 推送分开**，
 未明确要求时不自动更新服务器。
 
-## 当前工作树
+## Git 安全
 
-包含未提交的历史开发改动（v0.6–v0.7.x 大部分成果只在工作树里），
-**禁止 `git reset --hard` 清理**。细节与已知事项见 `docs/knowledge.md`。
+工作树可能包含用户改动，禁止用 `git reset --hard` 或其他破坏性命令清理。
+细节与已知事项见 `docs/knowledge.md`。

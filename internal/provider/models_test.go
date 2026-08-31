@@ -16,7 +16,7 @@ func TestModelsForAuthPersistsRefreshAndDiscoversModels(t *testing.T) {
 	})
 	configValue.Store(pluginConfig{
 		ImportMode:        "copy",
-		ModelPrefix:       "kiro/",
+		ModelPrefix:       "nexus/",
 		DesktopRefreshURL: "https://fixture.invalid/refresh",
 		ModelDiscoveryURL: "https://fixture.invalid/models",
 	})
@@ -66,7 +66,7 @@ func TestModelsForAuthPersistsRefreshAndDiscoversModels(t *testing.T) {
 	if errUnmarshal := json.Unmarshal(env.Result, &response); errUnmarshal != nil {
 		t.Fatal(errUnmarshal)
 	}
-	if len(response.Models) != 1 || response.Models[0].ID != "kiro/fixture-model" {
+	if len(response.Models) != 1 || response.Models[0].ID != "nexus/fixture-model" {
 		t.Fatalf("models = %#v", response.Models)
 	}
 	if response.Models[0].DisplayName != "Fixture Model" || response.Models[0].InputTokenLimit != 272000 || response.Models[0].OutputTokenLimit != 64000 {

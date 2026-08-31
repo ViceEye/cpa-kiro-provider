@@ -1,5 +1,5 @@
-Kiro Provider for CLIProxyAPI
-Copyright (C) 2026 Kiro Gateway contributors
+CPA Provider Nexus for CLIProxyAPI
+Copyright (C) 2026 CPA Provider Nexus contributors
 
 This independent plugin is derived from protocol, authentication, conversion,
 and streaming behavior implemented by Kiro Gateway:

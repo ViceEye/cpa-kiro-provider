@@ -21,7 +21,7 @@ func TestParseDesktopCredentialAndPersistedReference(t *testing.T) {
 		t.Fatalf("credentials = %d, want 1", len(creds))
 	}
 	cred := creds[0]
-	if cred.AuthType != "kiro_desktop" || cred.APIRegion != "us-west-2" || cred.SSORegion != "eu-west-1" {
+	if cred.Type != providerID || cred.Kind != "kiro" || cred.AuthType != "kiro_desktop" || cred.APIRegion != "us-west-2" || cred.SSORegion != "eu-west-1" {
 		t.Fatalf("credential = %#v", cred)
 	}
 
@@ -126,7 +126,7 @@ func TestRefreshCredentialDesktopAndOIDC(t *testing.T) {
 func TestFinalizeCredentialRepairsLegacyOAuthRegionCoupling(t *testing.T) {
 	originalConfig := loadedConfig()
 	t.Cleanup(func() { configValue.Store(originalConfig) })
-	configValue.Store(pluginConfig{ImportMode: "copy", ModelPrefix: "kiro/"})
+	configValue.Store(pluginConfig{ImportMode: "copy", ModelPrefix: "nexus/"})
 
 	cred := credential{
 		SourceKind:   "oauth_device",
@@ -145,7 +145,7 @@ func TestFinalizeCredentialRepairsLegacyOAuthRegionCoupling(t *testing.T) {
 func TestFinalizeCredentialKeepsExplicitOAuthAPIRegionOverride(t *testing.T) {
 	originalConfig := loadedConfig()
 	t.Cleanup(func() { configValue.Store(originalConfig) })
-	configValue.Store(pluginConfig{ImportMode: "copy", ModelPrefix: "kiro/", APIRegion: "eu-west-1"})
+	configValue.Store(pluginConfig{ImportMode: "copy", ModelPrefix: "nexus/", APIRegion: "eu-west-1"})
 
 	cred := credential{
 		SourceKind:   "oauth_device",

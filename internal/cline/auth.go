@@ -40,9 +40,8 @@ func decodeCredential(raw []byte) (credential, error) {
 	if err := json.Unmarshal(raw, &cred); err != nil {
 		return cred, fmt.Errorf("decode Cline auth storage: %w", err)
 	}
-	if cred.Type == "" {
-		cred.Type = providerID
-	}
+	cred.Type = pluginProvider
+	cred.Kind = TypeMarker
 	if cred.Version == 0 {
 		cred.Version = 1
 	}
@@ -86,7 +85,7 @@ func authDataFromCredential(cred credential) (authData, error) {
 		Label:       cred.Email,
 		StorageJSON: storage,
 		Metadata:    map[string]any{"auth_type": "oauth", "source_kind": "oauth_cline"},
-		Attributes:  map[string]string{"auth_provider": providerID},
+		Attributes:  map[string]string{"auth_provider": pluginProvider},
 	}, nil
 }
 
@@ -144,7 +143,7 @@ func ParseAuth(raw []byte) ([]byte, error) {
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return nil, err
 	}
-	if req.Provider != "" && !strings.EqualFold(req.Provider, providerID) {
+	if req.Provider != "" && !strings.EqualFold(req.Provider, pluginProvider) {
 		return okEnvelope(authParseResponse{Handled: false})
 	}
 	if len(req.RawJSON) == 0 {

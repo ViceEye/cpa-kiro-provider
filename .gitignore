@@ -1,7 +1,7 @@
 # Build and test output
 /dist/
-/kiro-provider
-/kiro-provider.exe
+/cpa-provider-nexus
+/cpa-provider-nexus.exe
 *.so
 *.dll
 *.dylib

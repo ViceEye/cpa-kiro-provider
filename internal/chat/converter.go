@@ -13,7 +13,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
+	"github.com/ViceEye/cpa-provider-nexus/internal/jsonx"
 )
 
 const maxKiroPayloadBytes = 900 * 1024
@@ -1045,7 +1045,7 @@ var (
 )
 
 func NormalizeModelName(name string) string {
-	name = strings.TrimSpace(strings.TrimPrefix(name, "kiro/"))
+	name = strings.TrimSpace(strings.TrimPrefix(name, "nexus/"))
 	name = regexp.MustCompile(`\[\d+[mk]\]$`).ReplaceAllString(strings.ToLower(name), "")
 	if match := standardModelPattern.FindStringSubmatch(name); len(match) > 0 {
 		return match[1] + "." + match[2]

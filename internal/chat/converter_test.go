@@ -9,7 +9,7 @@ import (
 
 func TestBuildKiroPayloadWithHistoryImageAndTools(t *testing.T) {
 	raw := []byte(`{
-      "model":"kiro/claude-sonnet-4-5-20250514",
+      "model":"nexus/claude-sonnet-4-5-20250514",
       "messages":[
         {"role":"system","content":"Follow the test policy."},
         {"role":"user","content":[{"type":"text","text":"inspect image"},{"type":"image_url","image_url":{"url":"data:image/png;base64,aW1hZ2U="}}]},
@@ -18,7 +18,7 @@ func TestBuildKiroPayloadWithHistoryImageAndTools(t *testing.T) {
       ],
       "tools":[{"type":"function","function":{"name":"lookup","description":"Lookup data","parameters":{"type":"object","properties":{"q":{"type":"string"}}}}}]
     }`)
-	payload, model, errBuild := BuildPayload(raw, "kiro/claude-sonnet-4-5-20250514", "arn:fake")
+	payload, model, errBuild := BuildPayload(raw, "nexus/claude-sonnet-4-5-20250514", "arn:fake")
 	if errBuild != nil {
 		t.Fatalf("buildKiroPayload() error = %v", errBuild)
 	}
@@ -58,13 +58,13 @@ func TestBuildKiroPayloadWithHistoryImageAndTools(t *testing.T) {
 }
 
 func TestBuildPayloadStripsToolContentWhenToolsOmitted(t *testing.T) {
-	raw := []byte(`{"model":"kiro/gpt-5.6-luna","messages":[
+	raw := []byte(`{"model":"nexus/gpt-5.6-luna","messages":[
       {"role":"user","content":"run it"},
       {"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]},
       {"role":"tool","tool_call_id":"call_1","content":"done"},
       {"role":"user","content":"continue"}
     ]}`)
-	payload, _, errBuild := BuildPayload(raw, "kiro/gpt-5.6-luna", "arn:fake")
+	payload, _, errBuild := BuildPayload(raw, "nexus/gpt-5.6-luna", "arn:fake")
 	if errBuild != nil {
 		t.Fatalf("BuildPayload() error = %v", errBuild)
 	}
@@ -77,12 +77,12 @@ func TestBuildPayloadStripsToolContentWhenToolsOmitted(t *testing.T) {
 }
 
 func TestBuildPayloadConvertsOrphanToolResult(t *testing.T) {
-	raw := []byte(`{"model":"kiro/gpt-5.6-luna","messages":[
+	raw := []byte(`{"model":"nexus/gpt-5.6-luna","messages":[
       {"role":"user","content":"previous"},
       {"role":"tool","tool_call_id":"missing","content":"orphan result"},
       {"role":"user","content":"continue"}
     ],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`)
-	payload, _, errBuild := BuildPayload(raw, "kiro/gpt-5.6-luna", "arn:fake")
+	payload, _, errBuild := BuildPayload(raw, "nexus/gpt-5.6-luna", "arn:fake")
 	if errBuild != nil {
 		t.Fatalf("BuildPayload() error = %v", errBuild)
 	}
@@ -95,7 +95,7 @@ func TestBuildPayloadConvertsOrphanToolResult(t *testing.T) {
 }
 
 func TestBuildPayloadKeepsOnlyMatchedToolPairs(t *testing.T) {
-	raw := []byte(`{"model":"kiro/claude-sonnet-5","messages":[
+	raw := []byte(`{"model":"nexus/claude-sonnet-5","messages":[
       {"role":"user","content":"previous"},
       {"role":"assistant","content":"","tool_calls":[
         {"id":"call_ok","type":"function","function":{"name":"lookup","arguments":"{}"}},
@@ -105,7 +105,7 @@ func TestBuildPayloadKeepsOnlyMatchedToolPairs(t *testing.T) {
       {"role":"tool","tool_call_id":"unknown","content":"orphan"},
       {"role":"user","content":"continue"}
     ],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`)
-	payload, _, errBuild := BuildPayload(raw, "kiro/claude-sonnet-5", "arn:fake")
+	payload, _, errBuild := BuildPayload(raw, "nexus/claude-sonnet-5", "arn:fake")
 	if errBuild != nil {
 		t.Fatalf("BuildPayload() error = %v", errBuild)
 	}
@@ -121,12 +121,12 @@ func TestBuildPayloadKeepsOnlyMatchedToolPairs(t *testing.T) {
 }
 
 func TestBuildPayloadFlattensToolCallsWithoutResults(t *testing.T) {
-	raw := []byte(`{"model":"kiro/claude-sonnet-5","messages":[
+	raw := []byte(`{"model":"nexus/claude-sonnet-5","messages":[
       {"role":"user","content":"previous"},
       {"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]},
       {"role":"user","content":"continue"}
     ],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`)
-	payload, _, errBuild := BuildPayload(raw, "kiro/claude-sonnet-5", "arn:fake")
+	payload, _, errBuild := BuildPayload(raw, "nexus/claude-sonnet-5", "arn:fake")
 	if errBuild != nil {
 		t.Fatalf("BuildPayload() error = %v", errBuild)
 	}
@@ -218,7 +218,7 @@ func TestSanitizeSchemaDefaultsRootObject(t *testing.T) {
 }
 
 func TestNormalizeModelName(t *testing.T) {
-	cases := map[string]string{"kiro/claude-haiku-4-5": "claude-haiku-4.5", "claude-3-7-sonnet-20250219": "claude-3.7-sonnet", "auto": "auto"}
+	cases := map[string]string{"nexus/claude-haiku-4-5": "claude-haiku-4.5", "claude-3-7-sonnet-20250219": "claude-3.7-sonnet", "auto": "auto"}
 	for input, want := range cases {
 		if got := NormalizeModelName(input); got != want {
 			t.Errorf("normalizeModelName(%q) = %q, want %q", input, got, want)
@@ -227,7 +227,7 @@ func TestNormalizeModelName(t *testing.T) {
 }
 
 func TestBuildKiroPayloadTrimsOversizedHistory(t *testing.T) {
-	request := chatRequest{Model: "kiro/claude-opus-4.5"}
+	request := chatRequest{Model: "nexus/claude-opus-4.5"}
 	system, _ := json.Marshal("keep-system-policy")
 	request.Messages = append(request.Messages, chatMessage{Role: "system", Content: system})
 	for index := 0; index < 180; index++ {

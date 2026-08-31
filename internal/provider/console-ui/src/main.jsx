@@ -8,10 +8,11 @@ import codexIcon from './assets/codex.svg';
 import geminiIcon from './assets/gemini.svg';
 import grokIcon from './assets/grok.svg';
 import kimiIcon from './assets/kimi-light.svg';
+import nexusIcon from './assets/nexus.svg';
 import qwenIcon from './assets/qwen.svg';
 import vertexIcon from './assets/vertex.svg';
 
-const API = '/v0/management/plugins/kiro-provider';
+const API = '/v0/management/plugins/cpa-provider-nexus';
 // CPA native management API (same origin, same Bearer). auth-files is the
 // single source of truth for per-credential success/failed counts and
 // per-provider quota signals across every provider, not just Kiro.
@@ -64,6 +65,16 @@ function ModelClusterIcon({ size = 14 }) {
       <path d="M12 11v2" />
       <path d="M7.5 11v2" />
       <path d="M16.5 11v2" />
+    </svg>
+  );
+}
+
+function OAuthLoginIcon({ size = 22 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2 21a8 8 0 0 1 13.292-6" />
+      <circle cx="10" cy="8" r="5" />
+      <path d="m16 19 2 2 4-4" />
     </svg>
   );
 }
@@ -1121,8 +1132,13 @@ const OAUTH_PROVIDERS = {
 function OAuthBrandIcon({ provider, size = 22 }) {
   const [failed, setFailed] = useState(false);
   const item = OAUTH_PROVIDERS[provider];
+  const useCardStyle = provider === 'cline';
+  const color = typeColor(provider);
+  const cardStyle = useCardStyle
+    ? { backgroundColor: color.bg, color: color.text, ...(color.border ? { border: color.border } : {}) }
+    : undefined;
   return (
-    <span className={`oauthBrandIcon ${item.className}`}>
+    <span className={`oauthBrandIcon ${item.className} ${useCardStyle ? 'oauthBrandIconCard' : ''}`} style={cardStyle}>
       {failed ? (
         <span className="oauthBrandFallback">{item.label.slice(0, 1)}</span>
       ) : (
@@ -1135,7 +1151,7 @@ function OAuthBrandIcon({ provider, size = 22 }) {
 function OAuthEntry({ onOpen }) {
   return (
     <button type="button" className="panel oauthEntry" onClick={onOpen}>
-      <span className="oauthEntryBrand"><OAuthBrandIcon provider="kiro" size={20} /></span>
+      <span className="oauthEntryBrand"><OAuthLoginIcon /></span>
       <span className="oauthEntryCopy">
         <strong>OAuth 登录</strong>
         <span className="muted">通过浏览器授权新增一个凭证</span>
@@ -1357,7 +1373,7 @@ function OAuthPanel({ provider, mgmtKey, onChanged, onBack }) {
 }
 
 function App() {
-  const [key, setKey] = useState(() => sessionStorage.getItem('kiro-management-key') || '');
+  const [key, setKey] = useState(() => sessionStorage.getItem('nexus-management-key') || '');
   const [draft, setDraft] = useState(key);
   const [files, setFiles] = useState([]);
   const [filter, setFilter] = useState('all');
@@ -1443,10 +1459,20 @@ function App() {
   return (
     <div className="page">
       <div className="eyebrow">CLI Proxy API · Plugin Resource</div>
-      <h1 className="pageTitle">Kiro Console</h1>
+      <div className="pageTitleRow">
+        <img src={nexusIcon} alt="" className="pageTitleIcon" />
+        <h1 className="pageTitle">Nexus Console</h1>
+      </div>
 
       {!keyValid && (
-        <section className="panel keyPanel">
+        <form
+          className="panel keyPanel"
+          onSubmit={(e) => {
+            e.preventDefault();
+            sessionStorage.setItem('nexus-management-key', draft.trim());
+            setKey(draft.trim());
+          }}
+        >
           <label htmlFor="mkey">Management Key</label>
           <input
             id="mkey"
@@ -1455,16 +1481,10 @@ function App() {
             onChange={(e) => setDraft(e.target.value)}
             placeholder="输入 CPA Management Key"
           />
-          <button
-            className="btn btnPrimary"
-            onClick={() => {
-              sessionStorage.setItem('kiro-management-key', draft.trim());
-              setKey(draft.trim());
-            }}
-          >
+          <button type="submit" className="btn btnPrimary">
             保存
           </button>
-        </section>
+        </form>
       )}
 
       {key && oauthPageOpen ? (

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
+	"github.com/ViceEye/cpa-provider-nexus/internal/jsonx"
 )
 
 type browserCallbackManagementRequest struct {

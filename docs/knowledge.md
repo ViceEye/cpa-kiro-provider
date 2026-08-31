@@ -1,17 +1,31 @@
-# kiro-provider 开发知识库
+# cpa-provider-nexus 开发知识库
 
 维护约定：本文档是长期知识库，不是交接快照。每次排查出新根因、变更部署方式
 或发现新的坑，把结论沉淀到对应章节；过期内容直接改写，不要另开新文件。
 
 ## 项目定位
 
-`kiro-provider` 是 CLIProxyAPI（CPA）的独立 Linux 原生插件，不修改 CPA 主包。
-运行时只需要 CPA 和插件 `.so`；`kiro-gateway`、`Kiro-Go`、`quotio-desktop`
-仅作为协议和登录流程参考。
+`cpa-provider-nexus` 是 CLIProxyAPI（CPA）的独立 Linux 原生插件，不修改 CPA 主包。
+插件以一个稳定身份聚合多个认证和模型来源；当前支持 Kiro 与 Cline。运行时只
+需要 CPA 和插件 `.so`；`kiro-gateway`、`Kiro-Go`、`quotio-desktop` 仅作为
+协议和登录流程参考。
 
-仓库：<https://github.com/ViceEye/cpa-kiro-provider>
+仓库：<https://github.com/ViceEye/cpa-provider-nexus>
 
 架构总览与目录职责见 `AGENTS.md`；本文档记录运行时行为、流程细节和经验教训。
+
+### 身份约定
+
+| 层级 | 值 |
+| --- | --- |
+| 项目、插件 ID、配置键 | `cpa-provider-nexus` |
+| CPA Provider ID、凭证 `type` | `nexus` |
+| 模型前缀 | `nexus/` |
+| Kiro 凭证来源 | `kind: "kiro"` |
+| Cline 凭证来源 | `kind: "cline"` |
+
+`type` 用于 CPA 把认证记录路由到本插件，`kind` 只用于插件内部选择实际协议。
+插件只接受 `type: "nexus"`，不保留旧 Provider ID 的兼容分支。
 
 ## 运行时与插件 ABI
 
@@ -57,6 +71,16 @@
 `clientIdHash` 注册、kiro-cli / Amazon Q SQLite（`auth_kv`）、目录批量。
 `reference` 模式跟随源文件刷新，`copy` 模式存独立副本。
 
+### Cline 来源
+
+- Cline 凭证以 `type: "nexus", kind: "cline"` 存储，刷新后仍保持该结构。
+- OAuth 使用浏览器回调 URL 换取 token；所有请求继续通过 CPA 的宿主 HTTP 桥，
+  插件本身不直连网络。
+- Cline 模型目录和对话响应使用其 API 信封，插件解包后统一注册为
+  `nexus/<vendor>/<model>` 并输出标准 OpenAI Chat Completions 格式。
+- Cline 免费模型没有 Kiro 订阅额度结构；面板只展示其上游实际可取得的余额或
+  错误状态。
+
 ## OAuth / 重新登录流程
 
 顶部 OAuth 登录（`/console/oauth/*`）和认证文件卡片“重新登录”
@@ -97,7 +121,7 @@ cd internal/provider/console-ui && npm run build
 Copy-Item dist\index.html ..\console\index.html -Force
 
 # 2. 插件 .so（Docker Desktop 需在运行；自动跑 gofmt/vet/test）
-$cfg = Join-Path $env:TEMP ("kp_dockercfg_" + [guid]::NewGuid().ToString("N"))
+$cfg = Join-Path $env:TEMP ("nexus_dockercfg_" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $cfg | Out-Null
 $env:DOCKER_CONFIG = $cfg
 docker build --output type=local,dest=dist .
@@ -112,19 +136,20 @@ docker build --output type=local,dest=dist .
 
 | 宿主路径 | 容器路径 | 内容 |
 | --- | --- | --- |
-| `/root/CLIProxyAPI/config.yaml` | `/CLIProxyAPI/config.yaml` | CPA 配置（插件配置在其 `plugins.configs.kiro-provider`） |
+| `/root/CLIProxyAPI/config.yaml` | `/CLIProxyAPI/config.yaml` | CPA 配置（插件配置在其 `plugins.configs.cpa-provider-nexus`） |
 | `/root/CLIProxyAPI/auths` | `/root/.cli-proxy-api` | 认证文件目录（`auth-dir`） |
 | `/root/CLIProxyAPI/plugins` | `/CLIProxyAPI/plugins` | 插件目录（旧版本改名加后缀即可，非 `.so` 结尾不会被加载） |
-| `/root/CLIProxyAPI/management.html` | `/CLIProxyAPI/static/management.html` | 自定义管理面板 |
 
 部署检查清单：
 
-1. 上传 `.so` 和 `.sha256` 到服务器 `/tmp/`，`sha256sum -c` 校验。
-2. 备份插件目录中的旧 `.so`（改名，如 `.bak-<说明>`）。
-3. 安装新 `.so` 并再次校验。
-4. `docker restart cli-proxy-api`。
-5. 日志确认 `plugin registered plugin_id=kiro-provider version=...`。
-6. `/auth-files` 确认 Kiro 记录数与磁盘文件数一致（防重复注册回归），
+1. 把配置键从旧的 `plugins.configs.kiro-provider` 改为
+   `plugins.configs.cpa-provider-nexus`，并移除旧插件 `.so`。
+2. 上传 `.so` 和 `.sha256` 到服务器 `/tmp/`，`sha256sum -c` 校验。
+3. 备份插件目录中的旧 `.so`（改名，如 `.bak-<说明>`）。
+4. 安装新 `.so` 并再次校验。
+5. `docker restart cli-proxy-api`。
+6. 日志确认 `plugin registered plugin_id=cpa-provider-nexus version=...`。
+7. `/auth-files` 确认 Kiro 记录数与磁盘文件数一致（防重复注册回归），
    `/v1/models` 确认模型出现，再做一次 Chat Completions 测试。
 
 服务器部署与 Git 推送分开执行；未明确要求时不要自动更新服务器。

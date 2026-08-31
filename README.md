@@ -1,38 +1,33 @@
-# Kiro Provider for CLIProxyAPI
+# CPA Provider Nexus
 
-Repository: <https://github.com/ViceEye/cpa-kiro-provider>
+Repository: <https://github.com/ViceEye/cpa-provider-nexus>
 
-`kiro-provider` is an independent AGPL-3.0 native provider plugin for
-CLIProxyAPI. It imports existing Kiro IDE, kiro-cli, Amazon Q, and AWS SSO
-credentials and exposes Kiro runtime models through the normal CPA API.
+`cpa-provider-nexus` is an independent AGPL-3.0 native provider plugin for
+CLIProxyAPI. It connects multiple credential and model sources behind one CPA
+provider identity. The current release supports Kiro and Cline OAuth.
 
 The production runtime consists only of CLIProxyAPI and
-`kiro-provider-v0.8.0.so`. Kiro Gateway is the protocol reference and is not a
+`cpa-provider-nexus-v0.9.0.so`. Kiro Gateway is the protocol reference and is not a
 sidecar or runtime dependency.
 
 ## Current release
 
-### v0.8.0 - 2026-08-30
+### v0.9.0 - 2026-08-30
 
-Fixes:
+Breaking identity change:
 
-- Keeps one CPA auth record per physical credential file. The plugin no longer
-  returns a content-hash auth ID from `auth.parse`, command line imports, refresh
-  responses, and model-discovery updates; the host now derives one file-based
-  record ID that `host.auth.save` upserts instead of registering a second record
-  for the same file. Multi-account files keep distinct per-account IDs.
-- Refresh responses now carry over stored fields the plugin does not model
-  (`disabled`, `priority`, `note`, ...), so a refreshed credential no longer
-  loses its disabled flag or weight.
-- Keeps the host record ID out of the stored credential JSON, so the
-  credential's content identity survives host-driven refreshes.
-- Preserves host record attributes (including the auth file path) across
-  refresh and model-discovery updates.
-- The console closes the relogin flow steps automatically after a successful
-  relogin instead of leaving the login URL and callback box open.
-- Adds an in-plugin OAuth provider selection page for Kiro and Cline.
-- Adds Cline browser OAuth callback handling and stores Cline credentials with
-  the plugin provider marker plus the Cline kind marker.
+- Renames the project and plugin from `kiro-provider` to
+  `cpa-provider-nexus`.
+- Changes the CPA provider identity and credential `type` from `kiro` to
+  `nexus`.
+- Changes registered model IDs from `kiro/<model>` to `nexus/<model>`.
+- Stores the upstream credential source separately as `kind: "kiro"` or
+  `kind: "cline"`.
+- Moves management and resource routes to
+  `/v0/management/plugins/cpa-provider-nexus/...` and
+  `/v0/resource/plugins/cpa-provider-nexus/...`.
+- Renames the embedded panel to Nexus Console and the Linux artifact to
+  `cpa-provider-nexus-v0.9.0.so`.
 
 Verification completed for this release:
 
@@ -61,6 +56,8 @@ commit.
 | `v0.6.2` | 2026-08-26 | Added Codex-to-Kiro Claude history normalization and fixed fragmented `toolUseEvent` output producing duplicate malformed OpenAI tool calls. |
 | `v0.7.0` | 2026-08-27 | Fixed object-valued tool arguments concatenating into invalid JSON, dropped `required` entries with no matching property, removed the assistant-content filler sentence that models echoed back as output, and degraded oversized requests by dropping large images and truncating large tool results instead of failing the turn. |
 | `v0.7.7` | 2026-08-29 | Unified auth record identity on the host's file-based ID so plugin saves upsert instead of duplicating credentials, kept host record IDs out of stored credential JSON, and made the console close the relogin flow after success. |
+| `v0.8.0` | 2026-08-30 | Added Cline OAuth, free-model execution, Cline credential cards, and the provider-selection login page. |
+| `v0.9.0` | 2026-08-30 | Renamed the plugin to CPA Provider Nexus and changed the public provider identity and model prefix to `nexus`. |
 
 When Git history starts, use commits and tags as the source of truth for later
 releases instead of extending this reconstructed pre-Git history.
@@ -68,6 +65,7 @@ releases instead of extending this reconstructed pre-Git history.
 ## Features
 
 - Kiro Desktop and AWS SSO OIDC refresh flows.
+- Cline browser OAuth, token refresh, free-model discovery, and execution.
 - First-time Kiro CLI-compatible browser PKCE login through `app.kiro.dev`,
   including the organization choice shown by Kiro's unified sign-in page.
 - Optional AWS Builder ID and IAM Identity Center device-code login.
@@ -75,14 +73,13 @@ releases instead of extending this reconstructed pre-Git history.
   Amazon Q SQLite import.
 - Multi-account import through CPA-owned `AuthData` persistence.
 - Reference mode (default) and independent copy mode.
-- Namespaced `kiro/<model>` registrations.
+- Namespaced `nexus/<model>` registrations.
 - Per-account dynamic model discovery through Kiro `ListAvailableModels`, with
   static models retained only as an outage fallback.
 - Automatic `profileArn` discovery through the AWS JSON
   `ListAvailableProfiles` operation for older OAuth credentials that contain
   valid tokens but no profile, with CPA auth persistence after discovery.
 - Authenticated Kiro subscription and credit quota Management API.
-- Official Kiro favicon in CPA plugin metadata.
 - OpenAI Chat Completions input/output, including streaming, images, tools,
   tool results, and multi-turn history.
 - AWS Binary Event Stream framing and CRC validation.
@@ -93,26 +90,23 @@ releases instead of extending this reconstructed pre-Git history.
 
 1. Build or download the Linux `.so` and place it under CPA's configured
    plugin directory.
-2. Enable `plugins.enabled` and `plugins.configs.kiro-provider.enabled`.
+2. Enable `plugins.enabled` and `plugins.configs.cpa-provider-nexus.enabled`.
 3. Choose one login mode from the next section. Remote organization accounts
    should use `aws-device`.
 4. Restart or recreate the CPA service and confirm that logs show
-   `plugin registered plugin_id=kiro-provider`.
-5. Open CPA's OAuth page, select **Kiro OAuth**, and complete sign-in.
-6. Confirm that Kiro models appear in `GET /v1/models`, then call them through
-   the normal OpenAI Chat Completions endpoint.
-7. Install the optional customized `management.html` only when Kiro balance
-   and quota cards are required in the web panel.
+   `plugin registered plugin_id=cpa-provider-nexus`.
+5. Open Nexus Console and select either **Kiro OAuth** or **Cline OAuth**.
+6. Confirm that `nexus/...` models appear in `GET /v1/models`, then call them
+   through the normal OpenAI Chat Completions endpoint.
 
 The plugin, OAuth login, model proxy, automatic token refresh, and quota API do
-not require CPA core changes. Only the visual Kiro quota cards require the
-customized management frontend.
+not require CPA core changes or a customized `management.html`.
 
 ## Plugin configuration
 
-Configure Kiro either from **Management Center → Plugins → Kiro → Edit
+Configure Nexus either from **Management Center → Plugins → Nexus → Edit
 configuration** or directly in CPA's `config.yaml` under
-`plugins.configs.kiro-provider`. The panel and YAML edit the same plugin-scoped
+`plugins.configs.cpa-provider-nexus`. The panel and YAML edit the same plugin-scoped
 settings; rebuilding the `.so` is not required when only these values change.
 
 ### Organization account template
@@ -125,7 +119,7 @@ plugins:
   enabled: true
   dir: /CLIProxyAPI/plugins
   configs:
-    kiro-provider:
+    cpa-provider-nexus:
       enabled: true
       priority: 100
       import_mode: reference
@@ -156,7 +150,7 @@ redirect if the login mode is changed later.
 After saving, confirm that CPA logs contain:
 
 ```text
-plugin registered plugin_id=kiro-provider
+plugin registered plugin_id=cpa-provider-nexus
 ```
 
 Then open **OAuth → Kiro OAuth**, follow the AWS verification link, complete
@@ -174,7 +168,7 @@ organization SSO, and leave the panel open until CPA reports success.
 | `sso_region` | `us-east-1` | AWS SSO OIDC registration, device authorization, and refresh region. |
 | `api_region` | `us-east-1` | Kiro runtime, model discovery, profile, and quota region. |
 | `browser_redirect_uri` | `http://localhost:3128` | Used only by browser authorization-code flows; Kiro rejects arbitrary public CPA domains. |
-| `model_prefix` | `kiro/` | Prefix registered on discovered model IDs. Use another non-empty prefix only when needed. |
+| `model_prefix` | `nexus/` | Prefix registered on discovered model IDs. Use another non-empty prefix only when needed. |
 | `static_models` | `[]` | Additional fallback model IDs when dynamic discovery is unavailable. |
 
 `runtime_base_url`, `model_discovery_url`, `usage_url`, refresh URLs, and token
@@ -202,7 +196,7 @@ browser callback:
 ```yaml
 plugins:
   configs:
-    kiro-provider:
+    cpa-provider-nexus:
       enabled: true
       login_mode: aws-device
       sso_start_url: https://example.awsapps.com/start
@@ -223,7 +217,7 @@ Use the Builder ID start URL. `sso_region` defaults to `us-east-1` when omitted:
 ```yaml
 plugins:
   configs:
-    kiro-provider:
+    cpa-provider-nexus:
       login_mode: aws-device
       sso_start_url: https://view.awsapps.com/start
       sso_region: us-east-1
@@ -237,7 +231,7 @@ Use the Kiro CLI-compatible loopback redirect:
 ```yaml
 plugins:
   configs:
-    kiro-provider:
+    cpa-provider-nexus:
       login_mode: kiro-browser
       browser_redirect_uri: http://localhost:3128
       api_region: us-east-1
@@ -248,7 +242,7 @@ server. Complete this flow with one of the following:
 
 1. Use a local Kiro CLI/browser listener or another loopback relay, then paste
    the complete localhost callback URL into a management panel that submits it to
-   `POST /v0/management/plugins/kiro-provider/oauth/callback`.
+   `POST /v0/management/plugins/cpa-provider-nexus/oauth/callback`.
 2. Sign in with Kiro CLI or Quotio and import the resulting credential.
 
 Never paste OAuth callback URLs into logs or issues; they may contain a
@@ -257,7 +251,7 @@ short-lived authorization code.
 ## Repository layout
 
 ```text
-cmd/kiro-provider/      Native C ABI entry point
+cmd/cpa-provider-nexus/      Native C ABI entry point
 internal/provider/      CPA/Kiro orchestration, OAuth, credentials and quota
 internal/chat/          OpenAI Chat Completions to Kiro request conversion
 internal/eventstream/   AWS Event Stream parser
@@ -273,15 +267,15 @@ Docker Desktop or a Linux Docker engine is required. The build target is
 Linux amd64 with glibc, matching the CPA Debian image.
 
 ```bash
-git clone https://github.com/ViceEye/cpa-kiro-provider.git
-cd cpa-kiro-provider
+git clone https://github.com/ViceEye/cpa-provider-nexus.git
+cd cpa-provider-nexus
 docker build --output type=local,dest=dist .
 ```
 
 The artifact is written to:
 
 ```text
-dist/linux/amd64/kiro-provider-v0.8.0.so
+dist/linux/amd64/cpa-provider-nexus-v0.9.0.so
 ```
 
 ## Install
@@ -291,11 +285,11 @@ subdirectory. Copy the versioned library using either layout:
 
 ```bash
 # Flat layout, such as the default /CLIProxyAPI/plugins mount:
-cp dist/linux/amd64/kiro-provider-v0.8.0.so plugins/
+cp dist/linux/amd64/cpa-provider-nexus-v0.9.0.so plugins/
 
 # Or platform-specific layout:
 mkdir -p plugins/linux/amd64
-cp dist/linux/amd64/kiro-provider-v0.8.0.so plugins/linux/amd64/
+cp dist/linux/amd64/cpa-provider-nexus-v0.9.0.so plugins/linux/amd64/
 ```
 
 Enable the plugin in `config.yaml`:
@@ -360,7 +354,7 @@ curl http://127.0.0.1:8317/v1/chat/completions \
   -H "Authorization: Bearer $CPA_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "kiro/claude-sonnet-4.5",
+    "model": "nexus/claude-sonnet-4.5",
     "stream": true,
     "messages": [{"role": "user", "content": "Hello"}]
   }'
@@ -386,7 +380,7 @@ HTTP GET `getUsageLimits` endpoint with `origin=AI_EDITOR` and
 `resourceType=AGENTIC_REQUEST` and the account's discovered `profileArn`:
 
 ```text
-GET /v0/management/plugins/kiro-provider/quota
+GET /v0/management/plugins/cpa-provider-nexus/quota
 ```
 
 It calls Kiro `GetUsageLimits` for every enabled Kiro credential and returns
@@ -394,8 +388,8 @@ sanitized subscription, credit usage, overage, charge, and reset information.
 Tokens, refresh credentials, profile ARNs, and upstream user IDs are never
 included. Set `usage_url` only to override the default Kiro service endpoint.
 
-Plugin metadata uses the official Kiro favicon at
-`https://kiro.dev/favicon.ico`.
+Plugin metadata uses the embedded Nexus logo served from
+`/v0/resource/plugins/cpa-provider-nexus/icon.svg`.
 
 ### Optional Kiro quota panel
 
@@ -472,7 +466,7 @@ new AWS client registration; it does not overwrite an unrelated expired entry.
 
 ## Credential behavior
 
-Each imported account becomes a separate `provider=kiro` CPA auth. CPA owns
+Each imported account becomes a separate `provider=nexus` CPA auth. CPA owns
 selection, session affinity, retry, cooldown, and failover. The plugin maps:
 
 - `401`/`403`: refresh and retry once, then propagate the status.
@@ -489,18 +483,18 @@ All fixtures use fake values and tests perform no real network requests:
 
 ```bash
 docker run --rm -v "$PWD:/src" -w /src golang:1.26-bookworm \
-  sh -c '/usr/local/go/bin/gofmt -w cmd/kiro-provider/*.go internal/*/*.go && /usr/local/go/bin/go vet ./... && /usr/local/go/bin/go test -v ./...'
+  sh -c '/usr/local/go/bin/gofmt -w cmd/cpa-provider-nexus/*.go internal/*/*.go && /usr/local/go/bin/go vet ./... && /usr/local/go/bin/go test -v ./...'
 ```
 
 An online smoke test is optional and must use a read-only credential mount.
 
 The repository also includes a network-isolated CPA integration fixture. Once
-the `kiro-mock` and `cpa-kiro-provider-test` containers are running on the
-`kiro-provider-test` Docker network, run:
+the `kiro-mock` and `cpa-provider-nexus-test` containers are running on the
+`cpa-provider-nexus-test` Docker network, run:
 
 ```bash
-docker restart kiro-mock cpa-kiro-provider-test
-docker run --rm --network kiro-provider-test \
+docker restart kiro-mock cpa-provider-nexus-test
+docker run --rm --network cpa-provider-nexus-test \
   -v "$PWD/integration:/tests:ro" \
   python:3.12-slim python /tests/run_integration.py
 ```
@@ -518,13 +512,11 @@ responses. All fixture credentials and responses are synthetic.
 3. Build the Linux amd64 `.so` and run the isolated CPA integration suite.
 4. Confirm that test fixtures contain synthetic values only.
 5. Push a `v<version>` tag. CI creates or updates the GitHub Release and uploads
-   `kiro-provider_<version>_linux_amd64.zip` plus `checksums.txt`. The ZIP
-   contains `kiro-provider.so` at its root as required by the CPA Plugin Store.
-6. Publish the optional customized `management.html` as a separate release
-   asset when its Kiro quota adapter matches this plugin release.
-7. To repair assets for an existing tag, manually run the CI workflow with
+   `cpa-provider-nexus_<version>_linux_amd64.zip` plus `checksums.txt`. The ZIP
+   contains `cpa-provider-nexus.so` at its root as required by the CPA Plugin Store.
+6. To repair assets for an existing tag, manually run the CI workflow with
    `release_tag` set to that tag, such as `v0.7.0`.
-8. Do not commit `dist/`, credentials, OAuth callbacks, or local CPA
+7. Do not commit `dist/`, credentials, OAuth callbacks, or local CPA
    configuration.
 
 ## License

@@ -201,12 +201,12 @@ func exchangeAuthorizationCode(code, callbackURL, idp string) (credential, error
 		expiresAt = time.Now().UTC().Add(time.Duration(expiresIn-60) * time.Second).Format(time.RFC3339)
 	}
 	return credential{
-		Type:         pluginProvider,
-		Kind:         TypeMarker,
-		Version:      1,
-		AccessToken:  parsed.Data.AccessToken,
-		RefreshToken: parsed.Data.RefreshToken,
-		ExpiresAt:    expiresAt,
+		Type:          pluginProvider,
+		Kind:          TypeMarker,
+		Version:       1,
+		AccessToken:   parsed.Data.AccessToken,
+		RefreshToken:  parsed.Data.RefreshToken,
+		ExpiresAt:     expiresAt,
 		LastRefreshAt: time.Now().UTC().Format(time.RFC3339),
 	}, nil
 }

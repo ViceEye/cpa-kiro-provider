@@ -1,23 +1,23 @@
 host: "0.0.0.0"
 port: 8317
-auth-dir: "/tmp/kiro-provider-auths"
+auth-dir: "/tmp/cpa-provider-nexus-auths"
 api-keys:
-  - "kiro-provider-integration-key"
+  - "cpa-provider-nexus-integration-key"
 remote-management:
   allow-remote: true
-  secret-key: "kiro-provider-integration-management-key"
+  secret-key: "cpa-provider-nexus-integration-management-key"
   disable-control-panel: true
 debug: false
 plugins:
   enabled: true
   dir: "/plugins"
   configs:
-    kiro-provider:
+    cpa-provider-nexus:
       enabled: true
       priority: 100
       import_mode: reference
       login_mode: kiro-browser
-      browser_redirect_uri: "http://localhost:8317/v0/resource/plugins/kiro-provider/oauth"
+      browser_redirect_uri: "http://localhost:8317/v0/resource/plugins/cpa-provider-nexus/oauth"
       desktop_token_url: "http://kiro-mock:18080/oauth/token"
       runtime_base_url: "http://kiro-mock:18080"
       model_discovery_url: "http://kiro-mock:18080"

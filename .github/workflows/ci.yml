@@ -48,7 +48,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
       - name: Check formatting
-        run: test -z "$(gofmt -l cmd/kiro-provider/*.go internal/*/*.go)"
+        run: test -z "$(gofmt -l cmd/cpa-provider-nexus/*.go internal/*/*.go)"
       - name: Vet
         run: go vet ./...
       - name: Test
@@ -61,19 +61,19 @@ jobs:
           CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
             -buildvcs=false -trimpath -buildmode=c-shared \
             -ldflags="-s -w" \
-            -o "dist/linux/amd64/kiro-provider-v${VERSION}.so" ./cmd/kiro-provider
-          rm -f "dist/linux/amd64/kiro-provider-v${VERSION}.h"
-          test -s "dist/linux/amd64/kiro-provider-v${VERSION}.so"
-          cp "dist/linux/amd64/kiro-provider-v${VERSION}.so" dist/package/kiro-provider.so
-          archive="kiro-provider_${VERSION}_linux_amd64.zip"
-          (cd dist/package && zip -9 "../release/${archive}" kiro-provider.so)
+            -o "dist/linux/amd64/cpa-provider-nexus-v${VERSION}.so" ./cmd/cpa-provider-nexus
+          rm -f "dist/linux/amd64/cpa-provider-nexus-v${VERSION}.h"
+          test -s "dist/linux/amd64/cpa-provider-nexus-v${VERSION}.so"
+          cp "dist/linux/amd64/cpa-provider-nexus-v${VERSION}.so" dist/package/cpa-provider-nexus.so
+          archive="cpa-provider-nexus_${VERSION}_linux_amd64.zip"
+          (cd dist/package && zip -9 "../release/${archive}" cpa-provider-nexus.so)
           (cd dist/release && sha256sum "$archive" > checksums.txt)
-          test "$(unzip -Z1 "dist/release/${archive}")" = "kiro-provider.so"
+          test "$(unzip -Z1 "dist/release/${archive}")" = "cpa-provider-nexus.so"
           (cd dist/release && sha256sum -c checksums.txt)
       - name: Upload release assets
         uses: actions/upload-artifact@v4
         with:
-          name: kiro-provider-release-v${{ steps.version.outputs.version }}
+          name: cpa-provider-nexus-release-v${{ steps.version.outputs.version }}
           path: dist/
           if-no-files-found: error
 
@@ -86,7 +86,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: kiro-provider-release-v${{ needs.test.outputs.version }}
+          name: cpa-provider-nexus-release-v${{ needs.test.outputs.version }}
           path: dist
       - name: Create or update GitHub Release
         env:

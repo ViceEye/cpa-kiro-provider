@@ -15,11 +15,11 @@ func modelsForAuth(raw []byte) ([]byte, error) {
 		entry.ID = modelPrefix + model.ID
 		models = append(models, entry)
 	}
-	return okEnvelope(modelResponse{Provider: providerID, Models: models})
+	return okEnvelope(modelResponse{Provider: pluginProvider, Models: models})
 }
 
 // usageForConnection returns the remaining free-credit balance. The quota
-// shape mirrors the kiro plugin's quotaAccount output.
+// shape mirrors the host plugin's quotaAccount output.
 func Usage(raw []byte) ([]byte, error) {
 	var req managementRequest
 	_ = json.Unmarshal(raw, &req)

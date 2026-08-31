@@ -40,12 +40,12 @@ func TestNormalizeImageResizesValidPNG(t *testing.T) {
 
 func TestBuildPayloadDropsOversizedImageInsteadOfFailing(t *testing.T) {
 	blob := strings.Repeat("A", maxKiroPayloadBytes+40000)
-	raw := []byte(`{"model":"kiro/claude-sonnet-5","messages":[{"role":"user","content":[
+	raw := []byte(`{"model":"nexus/claude-sonnet-5","messages":[{"role":"user","content":[
       {"type":"text","text":"what is in this screenshot"},
       {"type":"image","source":{"media_type":"image/png","data":"` + blob + `"}}
     ]}]}`)
 
-	payload, _, errBuild := BuildPayload(raw, "kiro/claude-sonnet-5", "arn:fake")
+	payload, _, errBuild := BuildPayload(raw, "nexus/claude-sonnet-5", "arn:fake")
 	if errBuild != nil {
 		t.Fatalf("oversized image should degrade, not fail: %v", errBuild)
 	}
@@ -71,11 +71,11 @@ func TestBuildPayloadDropsOversizedImageInsteadOfFailing(t *testing.T) {
 }
 
 func TestBuildPayloadKeepsSmallImage(t *testing.T) {
-	raw := []byte(`{"model":"kiro/claude-sonnet-5","messages":[{"role":"user","content":[
+	raw := []byte(`{"model":"nexus/claude-sonnet-5","messages":[{"role":"user","content":[
       {"type":"text","text":"tiny"},
       {"type":"image","source":{"media_type":"image/png","data":"QUJD"}}
     ]}]}`)
-	payload, _, errBuild := BuildPayload(raw, "kiro/claude-sonnet-5", "arn:fake")
+	payload, _, errBuild := BuildPayload(raw, "nexus/claude-sonnet-5", "arn:fake")
 	if errBuild != nil {
 		t.Fatal(errBuild)
 	}
@@ -89,13 +89,13 @@ func TestBuildPayloadKeepsSmallImage(t *testing.T) {
 
 func TestBuildPayloadTruncatesOversizedToolResult(t *testing.T) {
 	blob := strings.Repeat("L", maxKiroPayloadBytes+40000)
-	raw := []byte(`{"model":"kiro/claude-sonnet-5","messages":[
+	raw := []byte(`{"model":"nexus/claude-sonnet-5","messages":[
       {"role":"user","content":"run it"},
       {"role":"assistant","content":"","tool_calls":[{"id":"c1","type":"function","function":{"name":"lookup","arguments":"{}"}}]},
       {"role":"tool","tool_call_id":"c1","content":"` + blob + `"}
     ],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`)
 
-	payload, _, errBuild := BuildPayload(raw, "kiro/claude-sonnet-5", "arn:fake")
+	payload, _, errBuild := BuildPayload(raw, "nexus/claude-sonnet-5", "arn:fake")
 	if errBuild != nil {
 		t.Fatalf("oversized tool result should degrade, not fail: %v", errBuild)
 	}
@@ -109,7 +109,7 @@ func TestBuildPayloadTruncatesOversizedToolResult(t *testing.T) {
 
 func TestBuildPayloadSurvivesOversizedImageInHistory(t *testing.T) {
 	blob := strings.Repeat("H", maxKiroPayloadBytes+40000)
-	raw := []byte(`{"model":"kiro/claude-sonnet-5","messages":[
+	raw := []byte(`{"model":"nexus/claude-sonnet-5","messages":[
       {"role":"user","content":[
         {"type":"text","text":"old screenshot"},
         {"type":"image","source":{"media_type":"image/png","data":"` + blob + `"}}
@@ -118,7 +118,7 @@ func TestBuildPayloadSurvivesOversizedImageInHistory(t *testing.T) {
       {"role":"user","content":"now what"}
     ]}`)
 
-	payload, _, errBuild := BuildPayload(raw, "kiro/claude-sonnet-5", "arn:fake")
+	payload, _, errBuild := BuildPayload(raw, "nexus/claude-sonnet-5", "arn:fake")
 	if errBuild != nil {
 		t.Fatalf("oversized history image should be trimmed away, not fail: %v", errBuild)
 	}
@@ -148,9 +148,9 @@ func TestBuildPayloadDemotesToolResultOrphanedByTrimming(t *testing.T) {
 		`{"role":"assistant","content":"","tool_calls":[{"id":"call_final","type":"function","function":{"name":"lookup","arguments":"{}"}}]}`,
 		`{"role":"tool","tool_call_id":"call_final","content":"final result"}`,
 	)
-	raw := []byte(`{"model":"kiro/claude-sonnet-5","messages":[` + strings.Join(messages, ",") + `],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`)
+	raw := []byte(`{"model":"nexus/claude-sonnet-5","messages":[` + strings.Join(messages, ",") + `],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`)
 
-	payload, _, errBuild := BuildPayload(raw, "kiro/claude-sonnet-5", "arn:fake")
+	payload, _, errBuild := BuildPayload(raw, "nexus/claude-sonnet-5", "arn:fake")
 	if errBuild != nil {
 		t.Fatal(errBuild)
 	}

@@ -12,11 +12,11 @@ import time
 from typing import Any
 
 
-CPA = os.environ.get("CPA_BASE_URL", "http://cpa-kiro-provider-test:8317").rstrip("/")
+CPA = os.environ.get("CPA_BASE_URL", "http://cpa-provider-nexus-test:8317").rstrip("/")
 MOCK = os.environ.get("KIRO_MOCK_BASE_URL", "http://kiro-mock:18080").rstrip("/")
-API_KEY = os.environ.get("CPA_API_KEY", "kiro-provider-integration-key")
+API_KEY = os.environ.get("CPA_API_KEY", "cpa-provider-nexus-integration-key")
 MANAGEMENT_KEY = os.environ.get(
-    "CPA_MANAGEMENT_KEY", "kiro-provider-integration-management-key"
+    "CPA_MANAGEMENT_KEY", "cpa-provider-nexus-integration-management-key"
 )
 
 
@@ -108,27 +108,27 @@ def assert_two_account_failover(snapshot: dict[str, Any], attempts: int = 2) -> 
 
 def main() -> None:
     plugins = management_json("/v0/management/plugins")
-    kiro = next(item for item in plugins["plugins"] if item["id"] == "kiro-provider")
+    kiro = next(item for item in plugins["plugins"] if item["id"] == "cpa-provider-nexus")
     assert kiro["effective_enabled"] is True, kiro
     assert kiro["supports_oauth"] is True, kiro
-    assert kiro["oauth_provider"] == "kiro", kiro
+    assert kiro["oauth_provider"] == "nexus", kiro
 
     models = request_json("/v1/models")
     model_ids = {item["id"] for item in models["data"]}
     required = {
-        "kiro/fixture-model",
-        "kiro/failover-402",
-        "kiro/failover-403",
-        "kiro/failover-429",
-        "kiro/failover-500",
-        "kiro/gpt-5.6-sol",
-        "kiro/gpt-5.6-terra",
-        "kiro/gpt-5.6-luna",
+        "nexus/fixture-model",
+        "nexus/failover-402",
+        "nexus/failover-403",
+        "nexus/failover-429",
+        "nexus/failover-500",
+        "nexus/gpt-5.6-sol",
+        "nexus/gpt-5.6-terra",
+        "nexus/gpt-5.6-luna",
     }
     assert required <= model_ids, model_ids
 
-    quota = management_json("/v0/management/plugins/kiro-provider/quota")
-    assert quota["provider"] == "kiro", quota
+    quota = management_json("/v0/management/plugins/cpa-provider-nexus/quota")
+    assert quota["provider"] == "nexus", quota
     assert len(quota["accounts"]) >= 2, quota
     assert {"Kiro Fake Account A", "Kiro Fake Account B"} <= {
         account["label"] for account in quota["accounts"]
@@ -144,33 +144,33 @@ def main() -> None:
         assert credits["usage_percent"] == 25.5, credits
 
     control([])
-    completion = json.loads(chat("kiro/fixture-model"))
+    completion = json.loads(chat("nexus/fixture-model"))
     assert completion["choices"][0]["message"]["content"] == "mock success", completion
 
-    stream = chat("kiro/fixture-model", stream=True).decode()
+    stream = chat("nexus/fixture-model", stream=True).decode()
     assert "data: data:" not in stream, stream
     assert stream.count("data: [DONE]") == 1, stream
     assert '"content":"mock "' in stream and '"content":"success"' in stream, stream
 
-    tool_completion = json.loads(chat("kiro/fixture-model", tools=True))
+    tool_completion = json.loads(chat("nexus/fixture-model", tools=True))
     tool_call = tool_completion["choices"][0]["message"]["tool_calls"][0]
     assert tool_call["function"]["name"] == "fixture_tool", tool_completion
     assert json.loads(tool_call["function"]["arguments"]) == {"value": "ok"}, tool_completion
 
-    tool_stream = chat("kiro/fixture-model", stream=True, tools=True).decode()
+    tool_stream = chat("nexus/fixture-model", stream=True, tools=True).decode()
     assert '"finish_reason":"tool_calls"' in tool_stream, tool_stream
     assert '"arguments":"{\\"value\\":\\"ok\\"}"' in tool_stream, tool_stream
 
     control([500, 200])
-    assert json.loads(chat("kiro/failover-500"))["choices"][0]["message"]["content"] == "mock success"
+    assert json.loads(chat("nexus/failover-500"))["choices"][0]["message"]["content"] == "mock success"
     assert_two_account_failover(stats())
 
     control([402, 200])
-    assert json.loads(chat("kiro/failover-402"))["choices"][0]["message"]["content"] == "mock success"
+    assert json.loads(chat("nexus/failover-402"))["choices"][0]["message"]["content"] == "mock success"
     assert_two_account_failover(stats())
 
     control([403, 403, 200])
-    assert json.loads(chat("kiro/failover-403"))["choices"][0]["message"]["content"] == "mock success"
+    assert json.loads(chat("nexus/failover-403"))["choices"][0]["message"]["content"] == "mock success"
     snapshot = stats()
     assert_two_account_failover(snapshot, attempts=3)
     assert snapshot["accounts"][0] == snapshot["accounts"][1], snapshot
@@ -178,7 +178,7 @@ def main() -> None:
     assert snapshot["refresh_accounts"] == [snapshot["accounts"][0]], snapshot
 
     control([429, 200])
-    failover_stream = chat("kiro/failover-429", stream=True).decode()
+    failover_stream = chat("nexus/failover-429", stream=True).decode()
     assert "mock " in failover_stream and "success" in failover_stream, failover_stream
     assert_two_account_failover(stats())
 
@@ -188,16 +188,16 @@ def main() -> None:
     login_query = urllib.parse.parse_qs(login_url.query)
     assert login_url.netloc == "app.kiro.dev" and login_url.path == "/signin", login
     assert login_query["redirect_uri"] == [
-        "http://localhost:8317/v0/resource/plugins/kiro-provider/oauth"
+        "http://localhost:8317/v0/resource/plugins/cpa-provider-nexus/oauth"
     ], login_query
 
-    callback_path = "/v0/resource/plugins/kiro-provider/oauth/signin/callback?" + urllib.parse.urlencode(
+    callback_path = "/v0/resource/plugins/cpa-provider-nexus/oauth/signin/callback?" + urllib.parse.urlencode(
         {"state": login["state"], "code": "fixture-browser-code"}
     )
     callback_page = public_request(callback_path).decode()
     assert "Kiro authorization received" in callback_page, callback_page
 
-    invalid_path = "/v0/resource/plugins/kiro-provider/oauth?" + urllib.parse.urlencode(
+    invalid_path = "/v0/resource/plugins/cpa-provider-nexus/oauth?" + urllib.parse.urlencode(
         {"state": "00000000-0000-4000-8000-000000000000", "code": "fixture-browser-code"}
     )
     public_request(invalid_path, expected_status=400)

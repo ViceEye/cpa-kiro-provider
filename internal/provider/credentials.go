@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
+	"github.com/ViceEye/cpa-provider-nexus/internal/jsonx"
 	_ "modernc.org/sqlite"
 )
 
@@ -336,9 +336,8 @@ func finalizeCredential(cred *credential) {
 	if cred == nil {
 		return
 	}
-	if cred.Type == "" {
-		cred.Type = providerID
-	}
+	cred.Type = providerID
+	cred.Kind = "kiro"
 	if cred.SSORegion == "" {
 		cred.SSORegion = defaultRegion
 	}

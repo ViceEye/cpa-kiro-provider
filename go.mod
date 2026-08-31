@@ -1,4 +1,4 @@
-module github.com/ViceEye/cpa-kiro-provider
+module github.com/ViceEye/cpa-provider-nexus
 
 go 1.26
 

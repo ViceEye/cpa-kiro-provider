@@ -6,7 +6,7 @@ import (
 )
 
 func TestParseAuthSingleAccountUsesHostFileIdentity(t *testing.T) {
-	raw, _ := json.Marshal(credential{RefreshToken: "fixture-refresh", AccessToken: "fixture-access"})
+	raw, _ := json.Marshal(credential{Type: providerID, Kind: "kiro", RefreshToken: "fixture-refresh", AccessToken: "fixture-access"})
 	rawRequest, _ := json.Marshal(authParseRequest{Provider: providerID, FileName: "kiro-fixture.json", RawJSON: raw})
 	rawResponse, errParse := parseAuth(rawRequest)
 	if errParse != nil {
@@ -22,6 +22,24 @@ func TestParseAuthSingleAccountUsesHostFileIdentity(t *testing.T) {
 	}
 	if response.Auth.ID != "" || response.Auth.FileName != "kiro-fixture.json" {
 		t.Fatalf("single-account identity = %q/%q, want empty/file name", response.Auth.ID, response.Auth.FileName)
+	}
+	var stored credential
+	if json.Unmarshal(response.Auth.StorageJSON, &stored) != nil || stored.Type != providerID || stored.Kind != "kiro" {
+		t.Fatalf("stored credential = %#v", stored)
+	}
+}
+
+func TestParseAuthRejectsLegacyProvider(t *testing.T) {
+	raw, _ := json.Marshal(credential{Type: "kiro", RefreshToken: "fixture-refresh"})
+	rawRequest, _ := json.Marshal(authParseRequest{Provider: "kiro", RawJSON: raw})
+	rawResponse, errParse := parseAuth(rawRequest)
+	if errParse != nil {
+		t.Fatal(errParse)
+	}
+	var env envelope
+	var response authParseResponse
+	if json.Unmarshal(rawResponse, &env) != nil || json.Unmarshal(env.Result, &response) != nil || response.Handled {
+		t.Fatalf("legacy provider response = %s", rawResponse)
 	}
 }
 

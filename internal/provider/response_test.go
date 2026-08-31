@@ -7,7 +7,7 @@ import (
 	"hash/crc32"
 	"testing"
 
-	"github.com/ViceEye/cpa-kiro-provider/internal/eventstream"
+	"github.com/ViceEye/cpa-provider-nexus/internal/eventstream"
 )
 
 func TestCompletionStreamFramesAreCanonicalJSON(t *testing.T) {

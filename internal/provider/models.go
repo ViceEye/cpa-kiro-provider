@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ViceEye/cpa-kiro-provider/internal/chat"
-	"github.com/ViceEye/cpa-kiro-provider/internal/cline"
+	"github.com/ViceEye/cpa-provider-nexus/internal/chat"
+	"github.com/ViceEye/cpa-provider-nexus/internal/cline"
 )
 
 var fallbackModels = []string{
@@ -40,7 +40,7 @@ func modelInfos(names []string) []modelInfo {
 		if nativeName == "" {
 			continue
 		}
-		id := "kiro/" + nativeName
+		id := "nexus/" + nativeName
 		if _, exists := seen[id]; exists {
 			continue
 		}
@@ -69,7 +69,7 @@ func catalogModelInfos(catalog []kiroCatalogModel) []modelInfo {
 		if nativeName == "" {
 			continue
 		}
-		id := "kiro/" + nativeName
+		id := "nexus/" + nativeName
 		if _, exists := seen[id]; exists {
 			continue
 		}

@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ViceEye/cpa-kiro-provider/internal/chat"
-	"github.com/ViceEye/cpa-kiro-provider/internal/cline"
-	"github.com/ViceEye/cpa-kiro-provider/internal/eventstream"
-	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
+	"github.com/ViceEye/cpa-provider-nexus/internal/chat"
+	"github.com/ViceEye/cpa-provider-nexus/internal/cline"
+	"github.com/ViceEye/cpa-provider-nexus/internal/eventstream"
+	"github.com/ViceEye/cpa-provider-nexus/internal/jsonx"
 )
 
 type completionAccumulator struct {
@@ -261,7 +261,7 @@ func runtimeEndpoint(cred credential) string {
 }
 
 func kiroHeaders(cred credential) http.Header {
-	fingerprint := jsonx.NonEmpty(cred.Fingerprint, "default-kiro-provider")
+	fingerprint := jsonx.NonEmpty(cred.Fingerprint, "default-cpa-provider-nexus")
 	return http.Header{
 		"Authorization":               []string{"Bearer " + cred.AccessToken},
 		"Content-Type":                []string{"application/x-amz-json-1.0"},
@@ -300,7 +300,7 @@ func convertNonStreamResponse(raw []byte, model string) ([]byte, error) {
 		finishReason = "tool_calls"
 	}
 	response := map[string]any{
-		"id": acc.ID, "object": "chat.completion", "created": time.Now().Unix(), "model": "kiro/" + model,
+		"id": acc.ID, "object": "chat.completion", "created": time.Now().Unix(), "model": "nexus/" + model,
 		"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": finishReason}},
 		"usage":   map[string]any{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "kiro_credits": acc.Usage, "context_usage_percentage": acc.ContextUse},
 	}
@@ -368,7 +368,7 @@ func (a *completionAccumulator) finishFrame() []byte {
 
 func (a *completionAccumulator) chunk(delta map[string]any, finishReason *string) []byte {
 	choice := map[string]any{"index": 0, "delta": delta, "finish_reason": finishReason}
-	payload := map[string]any{"id": a.ID, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": "kiro/" + a.Model, "choices": []any{choice}}
+	payload := map[string]any{"id": a.ID, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": "nexus/" + a.Model, "choices": []any{choice}}
 	encoded, _ := json.Marshal(payload)
 	return encoded
 }

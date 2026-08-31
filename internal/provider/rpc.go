@@ -29,7 +29,7 @@ func SetHostCaller(caller func(string, any) (json.RawMessage, error)) {
 }
 
 func init() {
-	configValue.Store(pluginConfig{ImportMode: "reference", LoginMode: defaultLoginMode, ModelPrefix: "kiro/"})
+	configValue.Store(pluginConfig{ImportMode: "reference", LoginMode: defaultLoginMode, ModelPrefix: "nexus/"})
 }
 
 func loadedConfig() pluginConfig {
@@ -38,7 +38,7 @@ func loadedConfig() pluginConfig {
 		config.ImportMode = "reference"
 	}
 	if config.ModelPrefix == "" {
-		config.ModelPrefix = "kiro/"
+		config.ModelPrefix = "nexus/"
 	}
 	config.LoginMode = normalizeLoginMode(config.LoginMode)
 	if config.SSOStartURL == "" {
@@ -105,9 +105,9 @@ func registration(raw []byte) ([]byte, error) {
 	return okEnvelope(map[string]any{
 		"schema_version": 3,
 		"metadata": map[string]any{
-			"Name": "Kiro", "Version": pluginVersion, "Author": "cpa-kiro-provider contributors",
-			"GitHubRepository": "https://github.com/ViceEye/cpa-kiro-provider",
-			"Logo":             "https://kiro.dev/favicon.ico",
+			"Name": "Nexus", "Version": pluginVersion, "Author": "cpa-provider-nexus contributors",
+			"GitHubRepository": "https://github.com/ViceEye/cpa-provider-nexus",
+			"Logo":             nexusLogoPath,
 			"ConfigFields": []any{
 				map[string]any{"Name": "import_mode", "Type": "enum", "EnumValues": []string{"reference", "copy"}, "Description": "Default credential import ownership mode."},
 				map[string]any{"Name": "login_mode", "Type": "enum", "EnumValues": []string{"kiro-browser", "aws-device"}, "Description": "First-login flow. aws-device supports Builder ID and organization accounts and is recommended for remote CPA servers."},

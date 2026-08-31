@@ -130,11 +130,25 @@ body {
 }
 
 .pageTitle {
-  margin: 0 0 24px;
+  margin: 0;
   font-size: 28px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--text-primary);
+}
+
+.pageTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.pageTitleIcon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .muted {
@@ -740,6 +754,11 @@ body {
   background: var(--bg-tertiary);
 }
 
+.oauthEntryBrand {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
 .oauthEntryCopy,
 .oauthProviderCopy {
   display: flex;
@@ -774,6 +793,12 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.oauthPageHead,
+.oauthProviderCard {
+  height: 80px;
+  min-height: 80px;
 }
 
 .oauthPageHead > div,
@@ -824,6 +849,17 @@ body {
   object-fit: contain;
 }
 
+.oauthBrandIconCard {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.oauthBrandIconCard img {
+  width: 20px;
+  height: 20px;
+}
+
 .oauthBrandFallback {
   display: inline-flex;
   align-items: center;
@@ -847,8 +883,6 @@ body {
   display: flex;
   align-items: center;
   min-width: 0;
-  height: 64px;
-  min-height: 64px;
   gap: 13px;
   padding: 12px 18px;
   border: 1px solid var(--border-color);
@@ -878,13 +912,12 @@ body {
   line-height: 1.45;
 }
 
-.oauthEntryBrand,
 .oauthProviderKiro .oauthProviderIcon {
   background: color-mix(in srgb, #8b5cf6 12%, var(--bg-tertiary));
 }
 
 .oauthProviderCline .oauthProviderIcon {
-  background: color-mix(in srgb, #10b981 12%, var(--bg-tertiary));
+  background: transparent;
 }
 
 .oauthPanel {

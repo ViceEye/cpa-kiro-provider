@@ -17,7 +17,7 @@ func TestBrowserLoginStartAndPoll(t *testing.T) {
 		hostHTTPDoCall = originalHTTP
 		configValue.Store(originalConfig)
 	})
-	configValue.Store(pluginConfig{ImportMode: "reference", LoginMode: "kiro-browser", ModelPrefix: "kiro/", APIRegion: "eu-west-1"})
+	configValue.Store(pluginConfig{ImportMode: "reference", LoginMode: "kiro-browser", ModelPrefix: "nexus/", APIRegion: "eu-west-1"})
 
 	requests := 0
 	hostHTTPDoCall = func(req hostHTTPRequest) (hostHTTPResponse, error) {
@@ -38,7 +38,7 @@ func TestBrowserLoginStartAndPoll(t *testing.T) {
 		return hostHTTPResponse{StatusCode: http.StatusOK, Body: []byte(`{"accessToken":"access-browser","refreshToken":"refresh-browser","profileArn":"arn:aws:codewhisperer:eu-west-1:000000000000:profile/test","expiresIn":3600}`)}, nil
 	}
 
-	startEnvelopeRaw, errStart := startLogin([]byte(`{"Provider":"kiro","host_callback_id":"callback-start"}`))
+	startEnvelopeRaw, errStart := startLogin([]byte(`{"Provider":"nexus","host_callback_id":"callback-start"}`))
 	if errStart != nil {
 		t.Fatal(errStart)
 	}
@@ -76,7 +76,7 @@ func TestBrowserLoginStartAndPoll(t *testing.T) {
 		t.Fatalf("pending response = %s requests=%d", pendingRaw, requests)
 	}
 
-	callbackPath := filepath.Join(authDir, ".oauth-kiro-"+start.State+".oauth")
+	callbackPath := filepath.Join(authDir, ".oauth-"+providerID+"-"+start.State+".oauth")
 	callbackRaw, _ := json.Marshal(oauthCallbackPayload{Code: "browser-code", State: start.State})
 	if errWrite := os.WriteFile(callbackPath, callbackRaw, 0o600); errWrite != nil {
 		t.Fatal(errWrite)
@@ -119,7 +119,7 @@ func TestDeviceLoginStartAndPoll(t *testing.T) {
 		configValue.Store(originalConfig)
 	})
 	organizationStartURL := "https://example.awsapps.com/start"
-	configValue.Store(pluginConfig{ImportMode: "reference", LoginMode: "aws-device", ModelPrefix: "kiro/", SSORegion: "eu-west-1", APIRegion: "us-west-2", SSOStartURL: organizationStartURL, ModelDiscoveryURL: "https://service.fixture.invalid"})
+	configValue.Store(pluginConfig{ImportMode: "reference", LoginMode: "aws-device", ModelPrefix: "nexus/", SSORegion: "eu-west-1", APIRegion: "us-west-2", SSOStartURL: organizationStartURL, ModelDiscoveryURL: "https://service.fixture.invalid"})
 
 	requests := 0
 	hostHTTPDoCall = func(req hostHTTPRequest) (hostHTTPResponse, error) {
@@ -142,7 +142,7 @@ func TestDeviceLoginStartAndPoll(t *testing.T) {
 		}
 	}
 
-	startEnvelopeRaw, errStart := startLogin([]byte(`{"Provider":"kiro","host_callback_id":"callback-start"}`))
+	startEnvelopeRaw, errStart := startLogin([]byte(`{"Provider":"nexus","host_callback_id":"callback-start"}`))
 	if errStart != nil {
 		t.Fatal(errStart)
 	}
@@ -225,7 +225,7 @@ func TestKiroPortalOrganizationCallbackContinuesWithDeviceAuthorization(t *testi
 		hostHTTPDoCall = originalHTTP
 		configValue.Store(originalConfig)
 	})
-	configValue.Store(pluginConfig{ImportMode: "copy", LoginMode: "kiro-browser", ModelPrefix: "kiro/", ModelDiscoveryURL: "https://service.fixture.invalid"})
+	configValue.Store(pluginConfig{ImportMode: "copy", LoginMode: "kiro-browser", ModelPrefix: "nexus/", ModelDiscoveryURL: "https://service.fixture.invalid"})
 
 	requests := 0
 	hostHTTPDoCall = func(req hostHTTPRequest) (hostHTTPResponse, error) {
@@ -252,7 +252,7 @@ func TestKiroPortalOrganizationCallbackContinuesWithDeviceAuthorization(t *testi
 		}
 	}
 
-	startEnvelopeRaw, errStart := startLogin([]byte(`{"Provider":"kiro","host_callback_id":"callback-start"}`))
+	startEnvelopeRaw, errStart := startLogin([]byte(`{"Provider":"nexus","host_callback_id":"callback-start"}`))
 	if errStart != nil {
 		t.Fatal(errStart)
 	}
@@ -272,7 +272,7 @@ func TestKiroPortalOrganizationCallbackContinuesWithDeviceAuthorization(t *testi
 	callbackURL := "http://localhost:3128/signin/callback?login_option=awsidc&issuer_url=https%3A%2F%2Fexample.awsapps.com%2Fstart&idc_region=eu-west-1&state=" + url.QueryEscape(start.State)
 	callbackBody, _ := json.Marshal(browserCallbackManagementRequest{RedirectURL: callbackURL})
 	managementEnvelopeRaw, errManagement := handleManagement(mustJSON(managementRequest{
-		Method: http.MethodPost, Path: "/v0/management/plugins/kiro-provider/oauth/callback", Body: callbackBody, HostCallbackID: "callback-management",
+		Method: http.MethodPost, Path: "/v0/management/plugins/cpa-provider-nexus/oauth/callback", Body: callbackBody, HostCallbackID: "callback-management",
 	}))
 	if errManagement != nil {
 		t.Fatal(errManagement)
@@ -372,10 +372,10 @@ func TestIDCBrowserLoginStateDefaultsAPIRegion(t *testing.T) {
 
 func TestNormalizeManagementPath(t *testing.T) {
 	for input, expected := range map[string]string{
-		"plugins/kiro-provider/quota":                         "/plugins/kiro-provider/quota",
-		"/plugins/kiro-provider/quota":                        "/plugins/kiro-provider/quota",
-		"/v0/management/plugins/kiro-provider/quota":          "/plugins/kiro-provider/quota",
-		"/v0/management/plugins/kiro-provider/oauth/callback": "/plugins/kiro-provider/oauth/callback",
+		"plugins/cpa-provider-nexus/quota":                         "/plugins/cpa-provider-nexus/quota",
+		"/plugins/cpa-provider-nexus/quota":                        "/plugins/cpa-provider-nexus/quota",
+		"/v0/management/plugins/cpa-provider-nexus/quota":          "/plugins/cpa-provider-nexus/quota",
+		"/v0/management/plugins/cpa-provider-nexus/oauth/callback": "/plugins/cpa-provider-nexus/oauth/callback",
 	} {
 		if actual := normalizeManagementPath(input); actual != expected {
 			t.Fatalf("normalizeManagementPath(%q) = %q, want %q", input, actual, expected)

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/url"
@@ -37,7 +38,7 @@ func TestLoadKiroQuotasReturnsSanitizedUsage(t *testing.T) {
 	callHostCall = func(method string, payload any) (json.RawMessage, error) {
 		switch method {
 		case "host.auth.list":
-			return json.RawMessage(`{"files":[{"auth_index":"auth-1","name":"kiro-fixture.json","type":"kiro","provider":"kiro","label":"Fixture"}]}`), nil
+			return json.RawMessage(`{"files":[{"auth_index":"auth-1","name":"kiro-fixture.json","type":"nexus","provider":"nexus","label":"Fixture"}]}`), nil
 		case "host.auth.get":
 			result, _ := json.Marshal(hostAuthGetResponse{AuthIndex: "auth-1", Name: "kiro-fixture.json", JSON: storage})
 			return result, nil
@@ -176,7 +177,7 @@ func TestLoadKiroQuotaDiscoversAndPersistsMissingProfile(t *testing.T) {
 	}
 }
 
-func TestManagementRegistrationAndLogo(t *testing.T) {
+func TestManagementRegistrationMetadata(t *testing.T) {
 	rawRegistration, errRegistration := registration(nil)
 	if errRegistration != nil {
 		t.Fatal(errRegistration)
@@ -191,11 +192,11 @@ func TestManagementRegistrationAndLogo(t *testing.T) {
 	}
 	metadata, _ := registrationResult["metadata"].(map[string]any)
 	capabilities, _ := registrationResult["capabilities"].(map[string]any)
-	if metadata["Logo"] != "https://kiro.dev/favicon.ico" {
-		t.Fatalf("Logo = %#v", metadata["Logo"])
-	}
-	if metadata["Name"] != "Kiro" {
+	if metadata["Name"] != "Nexus" {
 		t.Fatalf("Name = %#v", metadata["Name"])
+	}
+	if metadata["Logo"] != nexusLogoPath {
+		t.Fatalf("Logo = %#v", metadata["Logo"])
 	}
 	if capabilities["management_api"] != true {
 		t.Fatalf("management_api = %#v", capabilities["management_api"])
@@ -211,5 +212,33 @@ func TestManagementRegistrationAndLogo(t *testing.T) {
 	}
 	if !json.Valid(managementEnvelope.Result) {
 		t.Fatalf("management registration is invalid JSON: %s", managementEnvelope.Result)
+	}
+	var managementResult struct {
+		Resources []struct {
+			Path string `json:"Path"`
+		} `json:"Resources"`
+	}
+	if errUnmarshal := json.Unmarshal(managementEnvelope.Result, &managementResult); errUnmarshal != nil {
+		t.Fatal(errUnmarshal)
+	}
+	foundLogo := false
+	for _, resource := range managementResult.Resources {
+		foundLogo = foundLogo || resource.Path == "icon.svg"
+	}
+	if !foundLogo {
+		t.Fatalf("icon resource missing: %#v", managementResult.Resources)
+	}
+}
+
+func TestNexusLogoResource(t *testing.T) {
+	response := handleManagementResponse(t, managementRequest{Method: http.MethodGet, Path: nexusLogoPath})
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("StatusCode = %d", response.StatusCode)
+	}
+	if response.Headers.Get("Content-Type") != "image/svg+xml" {
+		t.Fatalf("Content-Type = %q", response.Headers.Get("Content-Type"))
+	}
+	if !bytes.Equal(response.Body, nexusLogoSVG) {
+		t.Fatal("logo response does not match embedded nexus.svg")
 	}
 }

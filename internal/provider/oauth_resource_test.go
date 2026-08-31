@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const resourceRedirectBase = "https://cpa.example/v0/resource/plugins/kiro-provider/oauth"
+const resourceRedirectBase = "https://cpa.example/v0/resource/plugins/cpa-provider-nexus/oauth"
 
 func TestPublicBrowserCallbackAcceptsCodeAndPortalPath(t *testing.T) {
 	originalConfig := loadedConfig()
@@ -17,8 +17,8 @@ func TestPublicBrowserCallbackAcceptsCodeAndPortalPath(t *testing.T) {
 	configValue.Store(pluginConfig{LoginMode: defaultLoginMode, BrowserRedirectURI: resourceRedirectBase})
 
 	for _, path := range []string{
-		"/v0/resource/plugins/kiro-provider/oauth",
-		"/v0/resource/plugins/kiro-provider/oauth/signin/callback",
+		"/v0/resource/plugins/cpa-provider-nexus/oauth",
+		"/v0/resource/plugins/cpa-provider-nexus/oauth/signin/callback",
 	} {
 		state := randomID()
 		storeBrowserLoginSession(browserLoginState{
@@ -50,7 +50,7 @@ func TestPublicBrowserCallbackStoresOAuthError(t *testing.T) {
 
 	response := handleManagementResponse(t, managementRequest{
 		Method: http.MethodGet,
-		Path:   "/v0/resource/plugins/kiro-provider/oauth/signin/callback",
+		Path:   "/v0/resource/plugins/cpa-provider-nexus/oauth/signin/callback",
 		Query:  map[string][]string{"state": {state}, "error": {"access_denied"}},
 	})
 	if response.StatusCode != http.StatusBadRequest {
@@ -102,7 +102,7 @@ func TestPublicOrganizationCallbackRedirectsAndPolls(t *testing.T) {
 	start := startBrowserLoginForTest(t)
 	callback := managementRequest{
 		Method:         http.MethodGet,
-		Path:           "/v0/resource/plugins/kiro-provider/oauth/signin/callback",
+		Path:           "/v0/resource/plugins/cpa-provider-nexus/oauth/signin/callback",
 		HostCallbackID: "resource-callback",
 		Query: map[string][]string{
 			"state": {start.State}, "login_option": {"awsidc"},
@@ -171,7 +171,7 @@ func TestPublicBuilderIDCallbackUsesDefaultIssuer(t *testing.T) {
 	}
 	state := resourceBrowserSession(t, time.Now().UTC().Add(time.Minute))
 	response := handleManagementResponse(t, managementRequest{
-		Method: http.MethodGet, Path: "/v0/resource/plugins/kiro-provider/oauth",
+		Method: http.MethodGet, Path: "/v0/resource/plugins/cpa-provider-nexus/oauth",
 		Query: map[string][]string{"state": {state}, "login_option": {"builderid"}},
 	})
 	if response.StatusCode != http.StatusFound || response.Headers.Get("Location") != "https://device.sso.us-east-1.amazonaws.com/" {
@@ -200,7 +200,7 @@ func TestPublicCallbackRejectsInvalidInputs(t *testing.T) {
 	}
 
 	unknown := handleManagementResponse(t, managementRequest{
-		Method: http.MethodGet, Path: "/v0/resource/plugins/kiro-provider/oauth",
+		Method: http.MethodGet, Path: "/v0/resource/plugins/cpa-provider-nexus/oauth",
 		Query: map[string][]string{"state": {randomID()}, "code": {"code"}},
 	})
 	if unknown.StatusCode != http.StatusBadRequest {
@@ -209,7 +209,7 @@ func TestPublicCallbackRejectsInvalidInputs(t *testing.T) {
 
 	expiredState := resourceBrowserSession(t, time.Now().UTC().Add(-time.Second))
 	expired := handleManagementResponse(t, managementRequest{
-		Method: http.MethodGet, Path: "/v0/resource/plugins/kiro-provider/oauth",
+		Method: http.MethodGet, Path: "/v0/resource/plugins/cpa-provider-nexus/oauth",
 		Query: map[string][]string{"state": {expiredState}, "code": {"code"}},
 	})
 	if expired.StatusCode != http.StatusBadRequest {
@@ -218,7 +218,7 @@ func TestPublicCallbackRejectsInvalidInputs(t *testing.T) {
 
 	badIssuerState := resourceBrowserSession(t, time.Now().UTC().Add(time.Minute))
 	badIssuer := handleManagementResponse(t, managementRequest{
-		Method: http.MethodGet, Path: "/v0/resource/plugins/kiro-provider/oauth",
+		Method: http.MethodGet, Path: "/v0/resource/plugins/cpa-provider-nexus/oauth",
 		Query: map[string][]string{
 			"state": {badIssuerState}, "login_option": {"awsidc"},
 			"issuer_url": {"https://evil.example/start"}, "idc_region": {"eu-west-1"},
@@ -230,7 +230,7 @@ func TestPublicCallbackRejectsInvalidInputs(t *testing.T) {
 
 	badRegionState := resourceBrowserSession(t, time.Now().UTC().Add(time.Minute))
 	badRegion := handleManagementResponse(t, managementRequest{
-		Method: http.MethodGet, Path: "/v0/resource/plugins/kiro-provider/oauth",
+		Method: http.MethodGet, Path: "/v0/resource/plugins/cpa-provider-nexus/oauth",
 		Query: map[string][]string{
 			"state": {badRegionState}, "login_option": {"awsidc"},
 			"issuer_url": {"https://example.awsapps.com/start"}, "idc_region": {"not-a-region"},
@@ -242,7 +242,7 @@ func TestPublicCallbackRejectsInvalidInputs(t *testing.T) {
 
 	unsafeState := resourceBrowserSession(t, time.Now().UTC().Add(time.Minute))
 	unsafe := handleManagementResponse(t, managementRequest{
-		Method: http.MethodGet, Path: "/v0/resource/plugins/kiro-provider/oauth",
+		Method: http.MethodGet, Path: "/v0/resource/plugins/cpa-provider-nexus/oauth",
 		Query: map[string][]string{
 			"state": {unsafeState}, "login_option": {"awsidc"},
 			"issuer_url": {"https://example.awsapps.com/start"}, "idc_region": {"eu-west-1"},
@@ -302,8 +302,8 @@ func TestBrowserRedirectURIValidation(t *testing.T) {
 		"http://localhost:3128": true,
 		"http://127.0.0.1:3128": true,
 		resourceRedirectBase:    true,
-		"http://cpa.example/v0/resource/plugins/kiro-provider/oauth":              false,
-		"https://user:secret@cpa.example/v0/resource/plugins/kiro-provider/oauth": false,
+		"http://cpa.example/v0/resource/plugins/cpa-provider-nexus/oauth":              false,
+		"https://user:secret@cpa.example/v0/resource/plugins/cpa-provider-nexus/oauth": false,
 		"javascript:alert(1)": false,
 	} {
 		_, errParse := parseBrowserRedirectURI(input)
@@ -330,7 +330,7 @@ func resourceBrowserSession(t *testing.T, expiresAt time.Time) string {
 
 func startBrowserLoginForTest(t *testing.T) authLoginStartResponse {
 	t.Helper()
-	raw, errStart := startLogin([]byte(`{"Provider":"kiro","host_callback_id":"start-callback"}`))
+	raw, errStart := startLogin([]byte(`{"Provider":"nexus","host_callback_id":"start-callback"}`))
 	if errStart != nil {
 		t.Fatal(errStart)
 	}

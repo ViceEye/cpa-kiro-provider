@@ -61,8 +61,8 @@ import (
 	"net/http"
 	"unsafe"
 
-	"github.com/ViceEye/cpa-kiro-provider/internal/cline"
-	"github.com/ViceEye/cpa-kiro-provider/internal/provider"
+	"github.com/ViceEye/cpa-provider-nexus/internal/cline"
+	"github.com/ViceEye/cpa-provider-nexus/internal/provider"
 )
 
 const abiVersion uint32 = 1

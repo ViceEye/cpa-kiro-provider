@@ -7,7 +7,7 @@ import (
 	"hash/crc32"
 	"strings"
 
-	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
+	"github.com/ViceEye/cpa-provider-nexus/internal/jsonx"
 )
 
 type Event struct {

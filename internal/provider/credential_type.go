@@ -3,7 +3,7 @@ package provider
 import (
 	"encoding/json"
 
-	"github.com/ViceEye/cpa-kiro-provider/internal/cline"
+	"github.com/ViceEye/cpa-provider-nexus/internal/cline"
 )
 
 // credentialTypeMarker peeks the "type" discriminator from a StorageJSON /

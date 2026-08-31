@@ -9,13 +9,17 @@ import (
 	"net/http"
 )
 
-// Host bridge — mirrors the kiro-provider plugin's RPC plumbing. Each plugin
+// Host bridge — mirrors the cpa-provider-nexus plugin's RPC plumbing. Each plugin
 // .so gets its own host caller, wired by cliproxy_plugin_init via
 // SetHostCaller.
 
 var (
-	hostHTTPDoCall       = func(hostHTTPRequest) (hostHTTPResponse, error) { return hostHTTPResponse{}, errors.New("host unavailable") }
-	hostHTTPDoStreamCall = func(hostHTTPRequest) (hostHTTPStreamResponse, error) { return hostHTTPStreamResponse{}, errors.New("host unavailable") }
+	hostHTTPDoCall = func(hostHTTPRequest) (hostHTTPResponse, error) {
+		return hostHTTPResponse{}, errors.New("host unavailable")
+	}
+	hostHTTPDoStreamCall = func(hostHTTPRequest) (hostHTTPStreamResponse, error) {
+		return hostHTTPStreamResponse{}, errors.New("host unavailable")
+	}
 	readHostHTTPStreamCall = func(streamID string) (hostHTTPStreamReadResponse, error) {
 		return hostHTTPStreamReadResponse{}, errors.New("host unavailable")
 	}

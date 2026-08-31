@@ -85,7 +85,7 @@ func Execute(raw []byte) ([]byte, error) {
 	return okEnvelope(executorResponse{
 		Payload:  inner,
 		Headers:  http.Header{"Content-Type": []string{"application/json"}},
-		Metadata: map[string]any{"provider": providerID},
+		Metadata: map[string]any{"provider": pluginProvider},
 	})
 }
 

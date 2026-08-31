@@ -30,8 +30,8 @@ func TestExecuteKiroNonStreamDiscoversProfileBeforePayload(t *testing.T) {
 	}
 
 	storage, _ := json.Marshal(credential{AccessToken: "fixture-access", RefreshToken: "fixture-refresh", ExpiresAt: time.Now().UTC().Add(time.Hour).Format(time.RFC3339)})
-	payload := []byte(`{"model":"kiro/fixture-model","messages":[{"role":"user","content":"hello"}]}`)
-	_, cred, _, _, errExecute := executeKiroNonStream(executorRequest{Model: "kiro/fixture-model", Payload: payload, StorageJSON: storage})
+	payload := []byte(`{"model":"nexus/fixture-model","messages":[{"role":"user","content":"hello"}]}`)
+	_, cred, _, _, errExecute := executeKiroNonStream(executorRequest{Model: "nexus/fixture-model", Payload: payload, StorageJSON: storage})
 	if errExecute != nil || cred.ProfileARN != profileARN || calls != 2 {
 		t.Fatalf("execution result = cred:%#v calls:%d err:%v", cred, calls, errExecute)
 	}
@@ -60,8 +60,8 @@ func TestPrepareKiroStreamDiscoversProfileBeforePayload(t *testing.T) {
 	}
 
 	storage, _ := json.Marshal(credential{AccessToken: "fixture-access", RefreshToken: "fixture-refresh", ExpiresAt: time.Now().UTC().Add(time.Hour).Format(time.RFC3339)})
-	payload := []byte(`{"model":"kiro/fixture-model","messages":[{"role":"user","content":"hello"}],"stream":true}`)
-	response, _, _, errPrepare := prepareKiroStream(executorRequest{Model: "kiro/fixture-model", Payload: payload, StorageJSON: storage})
+	payload := []byte(`{"model":"nexus/fixture-model","messages":[{"role":"user","content":"hello"}],"stream":true}`)
+	response, _, _, errPrepare := prepareKiroStream(executorRequest{Model: "nexus/fixture-model", Payload: payload, StorageJSON: storage})
 	if errPrepare != nil || response.StreamID != "fixture-stream" {
 		t.Fatalf("stream prepare = %#v, err=%v", response, errPrepare)
 	}

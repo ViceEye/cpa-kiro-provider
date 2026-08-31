@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ViceEye/cpa-kiro-provider/internal/cline"
-	"github.com/ViceEye/cpa-kiro-provider/internal/jsonx"
+	"github.com/ViceEye/cpa-provider-nexus/internal/cline"
+	"github.com/ViceEye/cpa-provider-nexus/internal/jsonx"
 )
 
 type quotaAccount struct {
@@ -47,43 +47,44 @@ func registerManagement() ([]byte, error) {
 		"Routes": []any{
 			map[string]any{
 				"Method":      http.MethodPost,
-				"Path":        "plugins/kiro-provider/oauth/relogin/start",
+				"Path":        "plugins/cpa-provider-nexus/oauth/relogin/start",
 				"Description": "Starts Kiro OAuth again and replaces an existing Kiro credential.",
 			},
 			map[string]any{
 				"Method":      http.MethodGet,
-				"Path":        "plugins/kiro-provider/oauth/relogin/status",
+				"Path":        "plugins/cpa-provider-nexus/oauth/relogin/status",
 				"Description": "Polls a Kiro credential replacement login.",
 			},
 			map[string]any{
 				"Method":      http.MethodGet,
-				"Path":        "plugins/kiro-provider/quota",
+				"Path":        "plugins/cpa-provider-nexus/quota",
 				"Description": "Returns sanitized Kiro subscription and credit quota data for all Kiro auths.",
 			},
 			map[string]any{
 				"Method":      http.MethodPost,
-				"Path":        "plugins/kiro-provider/quotaRequest",
+				"Path":        "plugins/cpa-provider-nexus/quotaRequest",
 				"Description": "Refreshes sanitized Kiro subscription and credit quota data for all Kiro auths.",
 			},
 			map[string]any{
 				"Method":      http.MethodGet,
-				"Path":        "plugins/kiro-provider/credentials",
+				"Path":        "plugins/cpa-provider-nexus/credentials",
 				"Description": "Returns sanitized CPA credential records and request statistics.",
 			},
-			map[string]any{"Method": http.MethodPost, "Path": "plugins/kiro-provider/console/oauth/start", "Description": "Starts provider OAuth from the Kiro Console."},
-			map[string]any{"Method": http.MethodGet, "Path": "plugins/kiro-provider/console/oauth/status", "Description": "Polls provider OAuth from the Kiro Console."},
-			map[string]any{"Method": http.MethodPost, "Path": "plugins/kiro-provider/console/oauth/status", "Description": "Submits a browser OAuth callback from the Kiro Console."},
+			map[string]any{"Method": http.MethodPost, "Path": "plugins/cpa-provider-nexus/console/oauth/start", "Description": "Starts provider OAuth from the Nexus Console."},
+			map[string]any{"Method": http.MethodGet, "Path": "plugins/cpa-provider-nexus/console/oauth/status", "Description": "Polls provider OAuth from the Nexus Console."},
+			map[string]any{"Method": http.MethodPost, "Path": "plugins/cpa-provider-nexus/console/oauth/status", "Description": "Submits a browser OAuth callback from the Nexus Console."},
 			map[string]any{
 				"Method":      http.MethodPost,
-				"Path":        "plugins/kiro-provider/oauth/callback",
+				"Path":        "plugins/cpa-provider-nexus/oauth/callback",
 				"Description": "Accepts a Kiro browser callback and continues organization sign-in through AWS SSO OIDC.",
 			},
 		},
 		"Resources": []any{
+			map[string]any{"Path": "icon.svg"},
 			map[string]any{
 				"Path":        "console",
-				"Menu":        "Kiro Console",
-				"Description": "View Kiro credentials, request activity, quotas, and OAuth.",
+				"Menu":        "Nexus Console",
+				"Description": "View provider credentials, request activity, quotas, and OAuth.",
 			},
 		},
 	})
@@ -97,6 +98,13 @@ func handleManagement(raw []byte) ([]byte, error) {
 	if isBrowserCallbackResourcePath(req.Path) {
 		return handleBrowserCallbackResource(req)
 	}
+	if isNexusLogoResourcePath(req.Path) {
+		return okEnvelope(managementResponse{
+			StatusCode: http.StatusOK,
+			Headers:    http.Header{"Content-Type": []string{"image/svg+xml"}, "Cache-Control": []string{"no-store"}},
+			Body:       nexusLogoSVG,
+		})
+	}
 	if isConsoleResourcePath(req.Path) {
 		return okEnvelope(managementResponse{
 			StatusCode: http.StatusOK,
@@ -105,32 +113,32 @@ func handleManagement(raw []byte) ([]byte, error) {
 		})
 	}
 	path := normalizeManagementPath(req.Path)
-	if path == "/plugins/kiro-provider/oauth/relogin/start" {
+	if path == "/plugins/cpa-provider-nexus/oauth/relogin/start" {
 		return handleReloginStart(req)
 	}
-	if path == "/plugins/kiro-provider/oauth/relogin/status" {
+	if path == "/plugins/cpa-provider-nexus/oauth/relogin/status" {
 		return handleReloginStatus(req)
 	}
-	if path == "/plugins/kiro-provider/console/oauth/start" {
+	if path == "/plugins/cpa-provider-nexus/console/oauth/start" {
 		return handleConsoleOAuthStart(req)
 	}
-	if path == "/plugins/kiro-provider/console/oauth/status" {
+	if path == "/plugins/cpa-provider-nexus/console/oauth/status" {
 		return handleConsoleOAuthStatus(req)
 	}
-	if path == "/plugins/kiro-provider/oauth/callback" {
+	if path == "/plugins/cpa-provider-nexus/oauth/callback" {
 		return handleBrowserCallbackManagement(req)
 	}
-	if path == "/plugins/kiro-provider/credentials" {
+	if path == "/plugins/cpa-provider-nexus/credentials" {
 		if !strings.EqualFold(req.Method, http.MethodGet) {
 			return okEnvelope(managementResponse{StatusCode: http.StatusMethodNotAllowed, Headers: jsonHeaders(), Body: mustJSON(map[string]any{"error": "method_not_allowed"})})
 		}
 		return handleCredentialRecords()
 	}
-	refreshRequest := path == "/plugins/kiro-provider/quotaRequest"
+	refreshRequest := path == "/plugins/cpa-provider-nexus/quotaRequest"
 	if refreshRequest {
-		path = "/plugins/kiro-provider/quota"
+		path = "/plugins/cpa-provider-nexus/quota"
 	}
-	if path != "/plugins/kiro-provider/quota" {
+	if path != "/plugins/cpa-provider-nexus/quota" {
 		return okEnvelope(managementResponse{
 			StatusCode: http.StatusNotFound,
 			Headers:    jsonHeaders(),
@@ -228,12 +236,17 @@ func credentialAuthID(entry hostAuthFileEntry) string {
 
 func isBrowserCallbackResourcePath(value string) bool {
 	path := strings.TrimRight(strings.TrimSpace(value), "/")
-	return path == "/v0/resource/plugins/kiro-provider/oauth" || path == "/v0/resource/plugins/kiro-provider/oauth/signin/callback"
+	return path == "/v0/resource/plugins/cpa-provider-nexus/oauth" || path == "/v0/resource/plugins/cpa-provider-nexus/oauth/signin/callback"
 }
 
 func isConsoleResourcePath(value string) bool {
 	path := strings.TrimRight(strings.TrimSpace(value), "/")
-	return path == "/v0/resource/plugins/kiro-provider/console"
+	return path == "/v0/resource/plugins/cpa-provider-nexus/console"
+}
+
+func isNexusLogoResourcePath(value string) bool {
+	path := strings.TrimRight(strings.TrimSpace(value), "/")
+	return path == nexusLogoPath
 }
 
 func normalizeManagementPath(value string) string {
@@ -458,7 +471,6 @@ func mustJSON(value any) []byte {
 	raw, _ := json.Marshal(value)
 	return raw
 }
-
 
 // credentialStorageJSONByIndex fetches the raw auth-file JSON for an
 // auth_index and returns it together with the credential type marker.
