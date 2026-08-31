@@ -498,7 +498,7 @@ func stripToolContent(messages []normalizedMessage) []normalizedMessage {
 			parts = append(parts, message.Text)
 		}
 		for _, use := range message.ToolUses {
-			name := jsonx.String(use, "name")
+			name := jsonx.NonEmpty(strings.TrimSpace(jsonx.String(use, "name")), "unknown")
 			input, _ := json.Marshal(use["input"])
 			parts = append(parts, "[Tool Call] "+name+"\n"+string(input))
 		}
@@ -564,11 +564,12 @@ func validToolUses(uses []map[string]any) ([]map[string]any, []map[string]any) {
 	seen := make(map[string]struct{}, len(uses))
 	for _, use := range uses {
 		id := jsonx.String(use, "toolUseId")
-		name := jsonx.String(use, "name")
+		name := strings.TrimSpace(jsonx.String(use, "name"))
 		if id == "" || name == "" {
 			invalid = append(invalid, use)
 			continue
 		}
+		use["name"] = name
 		if _, exists := seen[id]; exists {
 			invalid = append(invalid, use)
 			continue

@@ -78,7 +78,7 @@ func Execute(raw []byte) ([]byte, error) {
 		return errorEnvelope("upstream_error", truncateError(response.Body, response.StatusCode), retryable, response.StatusCode), nil
 	}
 
-	inner, err := unwrapDataEnvelope(response.Body)
+	inner, err := normalizeClineResponse(response.Body, req.Model)
 	if err != nil {
 		return errorEnvelope("upstream_error", err.Error(), false, http.StatusBadGateway), nil
 	}
@@ -139,61 +139,81 @@ func ExecuteStream(raw []byte) ([]byte, error) {
 			response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500, response.StatusCode), nil
 	}
 
-	go consumeStream(req.StreamID, response.StreamID)
+	go consumeStream(req.StreamID, response.StreamID, req.Model)
 	return okEnvelope(map[string]any{"headers": http.Header{"Content-Type": []string{"text/event-stream"}}})
 }
 
 // consumeStream relays upstream SSE to the host stream, unwrapping the
 // {"data": {...}} envelope per chunk when present.
-func consumeStream(pluginStreamID, upstreamStreamID string) {
-	defer closePluginStream(pluginStreamID, "")
+func consumeStream(pluginStreamID, upstreamStreamID, model string) {
+	closed := false
+	closeStream := func(message string) {
+		if closed {
+			return
+		}
+		closed = true
+		closePluginStream(pluginStreamID, message)
+	}
+	defer closeStream("")
+	relay := newSSERelay(model)
 	for {
 		chunk, err := readHostHTTPStream(upstreamStreamID)
 		if err != nil {
-			closePluginStream(pluginStreamID, err.Error())
+			closeStream(err.Error())
 			return
 		}
 		if len(chunk.Payload) > 0 {
-			relayed := relaySSE(chunk.Payload)
-			if len(relayed) > 0 {
-				if err := emitPluginStream(pluginStreamID, relayed); err != nil {
+			frames, relayErr := relay.Feed(chunk.Payload)
+			if relayErr != nil {
+				closeStream(relayErr.Error())
+				return
+			}
+			for _, frame := range frames {
+				if err := emitPluginStream(pluginStreamID, frame); err != nil {
+					closeStream(err.Error())
 					return
 				}
 			}
 		}
 		if chunk.Error != "" {
-			closePluginStream(pluginStreamID, chunk.Error)
+			closeStream(chunk.Error)
 			return
 		}
 		if chunk.Done {
+			frames, relayErr := relay.Finish()
+			if relayErr != nil {
+				closeStream(relayErr.Error())
+				return
+			}
+			for _, frame := range frames {
+				if err := emitPluginStream(pluginStreamID, frame); err != nil {
+					closeStream(err.Error())
+					return
+				}
+			}
 			return
 		}
 	}
 }
 
-// relaySSE rewrites each `data: {...}` line, unwrapping the upstream envelope.
+// relaySSE is kept for single-chunk callers and tests. Runtime streaming uses
+// consumeStream's stateful relay so events split across host chunks survive.
 func relaySSE(payload []byte) []byte {
-	lines := strings.Split(string(payload), "\n")
-	out := make([]string, 0, len(lines))
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || trimmed == "data: [DONE]" {
-			out = append(out, line)
-			continue
-		}
-		if !strings.HasPrefix(trimmed, "data:") {
-			out = append(out, line)
-			continue
-		}
-		jsonPart := strings.TrimSpace(strings.TrimPrefix(trimmed, "data:"))
-		inner, errUnwrap := unwrapDataEnvelope([]byte(jsonPart))
-		if errUnwrap != nil {
-			out = append(out, line)
-			continue
-		}
-		out = append(out, "data: "+string(inner))
+	relay := newSSERelay("unknown")
+	frames, err := relay.Feed(payload)
+	if err != nil {
+		return payload
 	}
-	return []byte(strings.Join(out, "\n"))
+	tail, err := relay.Finish()
+	if err != nil {
+		return payload
+	}
+	frames = append(frames, tail...)
+	output := bytes.Join(frames, nil)
+	if bytes.Contains(payload, []byte("data: [DONE]")) {
+		output = append(output, []byte("data: [DONE]\n")...)
+	}
+	return output
 }
 
 // upstreamPayload clones the OpenAI body and rewrites the model id to the
@@ -204,6 +224,7 @@ func upstreamPayload(payload []byte, model string) ([]byte, error) {
 		return nil, fmt.Errorf("decode chat payload: %w", err)
 	}
 	body["model"] = strings.TrimPrefix(model, modelPrefix)
+	sanitizeClineRequestBody(body)
 	trimmed, err := json.Marshal(body)
 	if err != nil {
 		return nil, err

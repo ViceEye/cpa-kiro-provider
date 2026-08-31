@@ -64,7 +64,7 @@ func TestUpstreamPayloadStripsPrefix(t *testing.T) {
 }
 
 func TestRelaySSEUnwrapsEnvelope(t *testing.T) {
-	in := "data: {\"data\":{\"choices\":[{\"delta\":{\"content\":\"成\"}}]}}\ndata: [DONE]\n"
+	in := "data: {\"data\":{\"choices\":[{\"delta\":{\"content\":\"成\"}}]}}\n\ndata: [DONE]\n\n"
 	out := string(relaySSE([]byte(in)))
 	if !strings.Contains(out, `"delta":{"content":"成"}`) {
 		t.Fatalf("relayed SSE missing unwrapped delta: %s", out)
