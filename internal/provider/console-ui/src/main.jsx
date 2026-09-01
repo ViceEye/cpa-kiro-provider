@@ -188,6 +188,15 @@ async function downloadAuthFile(name, key) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
+async function downloadAuthFileText(name, key) {
+  const response = await fetch(
+    `${MGMT}/auth-files/download?name=${encodeURIComponent(name)}`,
+    { headers: { Authorization: `Bearer ${key}` } }
+  );
+  if (!response.ok) throw Error(`HTTP ${response.status}`);
+  return response.text();
+}
+
 // Some management-panel paths HTML-escape query separators. OAuth URLs must
 // reach Kiro with literal ampersands or its query parameters are corrupted.
 function cleanOAuthURL(value) {
@@ -206,6 +215,23 @@ const CODEX_HEADERS = {
   'Content-Type': 'application/json',
   'User-Agent': 'codex-tui/0.149.1 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.149.1)',
 };
+
+// Antigravity quota protocol mirrors the CPA management panel: subscription
+// comes from loadCodeAssist, while grouped 5-hour/weekly buckets come from
+// retrieveUserQuotaSummary.
+const ANTIGRAVITY_QUOTA_URLS = [
+  'https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
+  'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:retrieveUserQuotaSummary',
+  'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary',
+];
+const ANTIGRAVITY_LOAD_CODE_ASSIST_URL = 'https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist';
+const ANTIGRAVITY_USER_AGENT = 'antigravity/cli/1.0.13 (aidev_client; os_type=darwin; arch=arm64)';
+const ANTIGRAVITY_HEADERS = {
+  Authorization: 'Bearer $TOKEN$',
+  'Content-Type': 'application/json',
+  'User-Agent': ANTIGRAVITY_USER_AGENT,
+};
+const ANTIGRAVITY_LOAD_BODY = JSON.stringify({ metadata: { ideType: 'ANTIGRAVITY' } });
 
 // apiCall proxies an upstream HTTP call through CPA and normalizes the body to
 // parsed JSON when possible (mirrors management-center apiCallApi).
@@ -227,7 +253,7 @@ async function apiCall(mgmtKey, payload) {
       }
     }
   }
-  return { statusCode, body };
+  return { statusCode, body, header: res?.header || {} };
 }
 
 function codexAccountId(file) {
@@ -388,15 +414,214 @@ async function fetchCodexQuota(mgmtKey, file) {
   };
 }
 
+function normalizeAntigravityString(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeAntigravityProjectId(value) {
+  if (typeof value === 'string') return value.trim();
+  if (value && typeof value === 'object' && typeof value.id === 'string') return value.id.trim();
+  return '';
+}
+
+async function resolveAntigravityProjectId(mgmtKey, file) {
+  const direct = normalizeAntigravityProjectId(file.project_id || file.projectId);
+  if (direct) return direct;
+
+  const metadata = file.metadata && typeof file.metadata === 'object' ? file.metadata : null;
+  const metadataProject = normalizeAntigravityProjectId(metadata?.project_id || metadata?.projectId);
+  if (metadataProject) return metadataProject;
+
+  const attributes = file.attributes && typeof file.attributes === 'object' ? file.attributes : null;
+  const attributesProject = normalizeAntigravityProjectId(
+    attributes?.project_id || attributes?.projectId || attributes?.gemini_virtual_project
+  );
+  if (attributesProject) return attributesProject;
+
+  try {
+    const text = await downloadAuthFileText(file.name, mgmtKey);
+    const parsed = JSON.parse(text);
+    const topLevel = normalizeAntigravityProjectId(parsed?.project_id || parsed?.projectId);
+    if (topLevel) return topLevel;
+    const installed = parsed?.installed && typeof parsed.installed === 'object' ? parsed.installed : null;
+    const installedProject = normalizeAntigravityProjectId(installed?.project_id || installed?.projectId);
+    if (installedProject) return installedProject;
+    const web = parsed?.web && typeof parsed.web === 'object' ? parsed.web : null;
+    return normalizeAntigravityProjectId(web?.project_id || web?.projectId);
+  } catch {
+    return '';
+  }
+}
+
+function parseAntigravityPayload(value) {
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value.trim());
+    } catch {
+      return null;
+    }
+  }
+  if (value && typeof value === 'object') {
+    if (value.body && typeof value.body === 'object') return value.body;
+    return value;
+  }
+  return null;
+}
+
+function buildAntigravityQuotaGroups(payload) {
+  const groups = Array.isArray(payload?.groups) ? payload.groups : [];
+  return groups.reduce((result, group, groupIndex) => {
+    const label = normalizeAntigravityString(group.displayName || group.display_name) || `Quota Group ${groupIndex + 1}`;
+    const groupId = label.toLowerCase().replace(/[^a-z0-9]+/g, '-') || `quota-group-${groupIndex + 1}`;
+    const buckets = (Array.isArray(group.buckets) ? group.buckets : []).reduce((items, bucket, bucketIndex) => {
+      const remainingFraction = asNum(bucket.remainingFraction ?? bucket.remaining_fraction);
+      if (remainingFraction == null) return items;
+      const window = normalizeAntigravityString(bucket.window);
+      const id = normalizeAntigravityString(bucket.bucketId || bucket.bucket_id) || `${groupId}-${window || `bucket-${bucketIndex + 1}`}`;
+      items.push({
+        id,
+        label: normalizeAntigravityString(bucket.displayName || bucket.display_name) || id,
+        window,
+        remainingFraction: Math.max(0, Math.min(1, remainingFraction)),
+        resetTime: normalizeAntigravityString(bucket.resetTime || bucket.reset_time),
+        description: normalizeAntigravityString(bucket.description),
+      });
+      return items;
+    }, []);
+    if (buckets.length) result.push({
+      id: groupId,
+      label,
+      description: normalizeAntigravityString(group.description),
+      buckets: buckets.sort((a, b) => {
+        const rank = (value) => {
+          const key = value.trim().toLowerCase();
+          if (key === '5h' || key === 'five-hour' || key === 'five_hour') return 0;
+          if (key === 'weekly' || key === 'week') return 1;
+          return 2;
+        };
+        return rank(a.window) - rank(b.window);
+      }),
+    });
+    return result;
+  }, []);
+}
+
+function antigravitySubscription(value) {
+  const current = value?.currentTier || value?.current_tier;
+  const paid = value?.paidTier || value?.paid_tier;
+  const tier = paid?.id ? paid : current;
+  if (!tier || typeof tier !== 'object') return null;
+  const tierId = normalizeAntigravityString(tier.id);
+  const plans = {
+    'free-tier': 'Free',
+    'g1-pro-tier': 'Pro',
+    'g1-ultra-tier': 'Ultra',
+    'g1-ultra-lite-tier': 'Ultra Lite',
+  };
+  return { plan: plans[tierId] || normalizeAntigravityString(tier.name) || tierId || 'Unknown', tierId };
+}
+
+function antigravityServerTimeOffset(header) {
+  const entry = Object.entries(header || {}).find(([key]) => key.toLowerCase() === 'date');
+  const raw = Array.isArray(entry?.[1]) ? entry[1][0] : entry?.[1];
+  const serverTime = raw ? new Date(raw).getTime() : NaN;
+  return Number.isNaN(serverTime) ? 0 : serverTime - Date.now();
+}
+
+function formatAntigravityDuration(deltaMs) {
+  const totalMinutes = Math.max(1, Math.ceil(deltaMs / 60000));
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days) return `${days} 天 ${hours} 小时`;
+  if (hours) return `${hours} 小时 ${minutes} 分钟`;
+  if (minutes) return `${minutes} 分钟`;
+  return '不到 1 分钟';
+}
+
+function formatAntigravityResetLabel(resetTime, nowMs) {
+  if (!resetTime) return '—';
+  const resetMs = new Date(resetTime).getTime();
+  if (Number.isNaN(resetMs)) return '—';
+  const deltaMs = resetMs - nowMs;
+  return deltaMs <= 0 ? '额度可用' : `额度可用 ${formatAntigravityDuration(deltaMs)} 后刷新`;
+}
+
+function translateAntigravityGroupLabel(label) {
+  const key = label.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (key === 'gemini models') return 'GEMINI 模型';
+  if (key === 'claude and gpt models') return 'CLAUDE 和 GPT 模型';
+  return label;
+}
+
+function translateAntigravityBucketLabel(label) {
+  const key = label.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (key === '5 hour limit' || key === '5-hour limit' || key === 'five hour limit') return 'Five Hour Limit Remaining';
+  if (key === 'weekly limit') return 'Weekly Limit Remaining';
+  if (key === 'daily limit') return 'Daily Limit Remaining';
+  if (key === 'monthly limit') return 'Monthly Limit Remaining';
+  return label;
+}
+
+function translateAntigravityDescription(value) {
+  const match = String(value || '').match(/^models within this group:\s*(.+)$/i);
+  return match ? `此分组包含: ${match[1].trim()}` : value;
+}
+
+async function fetchAntigravityQuota(mgmtKey, file) {
+  if (!file.auth_index) throw Error('该凭证缺少运行时 auth_index');
+  const projectId = await resolveAntigravityProjectId(mgmtKey, file);
+  if (!projectId) throw Error('该凭证缺少 Antigravity project_id');
+
+  let subscription = null;
+  try {
+    const loaded = await apiCall(mgmtKey, {
+      authIndex: file.auth_index,
+      method: 'POST',
+      url: ANTIGRAVITY_LOAD_CODE_ASSIST_URL,
+      header: ANTIGRAVITY_HEADERS,
+      data: ANTIGRAVITY_LOAD_BODY,
+    });
+    if (loaded.statusCode >= 200 && loaded.statusCode < 300) subscription = antigravitySubscription(loaded.body);
+  } catch {
+    /* Quota data remains useful when subscription lookup fails. */
+  }
+
+  let lastError = '';
+  let lastStatus = 0;
+  for (const url of ANTIGRAVITY_QUOTA_URLS) {
+    const result = await apiCall(mgmtKey, {
+      authIndex: file.auth_index,
+      method: 'POST',
+      url,
+      header: ANTIGRAVITY_HEADERS,
+      data: JSON.stringify({ project: projectId }),
+    });
+    if (result.statusCode < 200 || result.statusCode >= 300) {
+      lastStatus = result.statusCode;
+      lastError = result.body?.error?.message || result.body?.message || `HTTP ${result.statusCode}`;
+      continue;
+    }
+    const payload = parseAntigravityPayload(result.body ?? result.bodyText);
+    const groups = buildAntigravityQuotaGroups(payload);
+    if (!groups.length) {
+      lastError = 'Antigravity 返回了空的额度分组';
+      continue;
+    }
+    return { groups, subscription, serverTimeOffsetMs: antigravityServerTimeOffset(result.header) };
+  }
+  throw Error(lastError || `额度接口返回 ${lastStatus || '错误'}`);
+}
+
 function fmtNum(n) {
   const v = Number(n);
   if (!Number.isFinite(v)) return '0';
   return v % 1 === 0 ? v.toLocaleString('en-US') : v.toFixed(2);
 }
 
-// Map CPA recent_requests buckets onto right-aligned discrete cells, 1:1 with
-// the official panel: each bucket is one solid cell — success-only=green,
-// failure-only=red, mixed=amber, empty=idle. Left-padded with idle cells.
+// Map CPA recent_requests buckets onto right-aligned cells, 1:1 with the
+// official panel. Each bucket keeps its success rate so the status bar uses
+// the same red -> amber -> green interpolation as CPA.
 const STATUS_CELLS = 20;
 const STATUS_CELL_MS = 10 * 60 * 1000;
 
@@ -427,8 +652,30 @@ function buildStatusCells(recent) {
     const total = b.success + b.failed;
     const state = total === 0 ? 'idle' : b.failed === 0 ? 'success' : b.success === 0 ? 'failure' : 'mixed';
     const startTime = windowStart + i * STATUS_CELL_MS;
-    return { state, success: b.success, failure: b.failed, startTime, endTime: startTime + STATUS_CELL_MS };
+    return {
+      state,
+      rate: total > 0 ? b.success / total : -1,
+      success: b.success,
+      failure: b.failed,
+      startTime,
+      endTime: startTime + STATUS_CELL_MS,
+    };
   });
+}
+
+function rateToColor(rate) {
+  const t = Math.max(0, Math.min(1, rate));
+  const segment = t < 0.5 ? 0 : 1;
+  const localT = segment === 0 ? t * 2 : (t - 0.5) * 2;
+  const stops = [
+    [239, 68, 68],
+    [250, 204, 21],
+    [34, 197, 94],
+  ];
+  const from = stops[segment];
+  const to = stops[segment + 1];
+  const rgb = from.map((value, index) => Math.round(value + (to[index] - value) * localT));
+  return `rgb(${rgb.join(', ')})`;
 }
 
 function StatusBar({ success, failure, recent }) {
@@ -457,7 +704,10 @@ function StatusBar({ success, failure, recent }) {
             onMouseEnter={() => setActive(i)}
             onMouseLeave={() => setActive(null)}
           >
-            <div className={`statusBlock statusBlock-${c.state}`} />
+            <div
+              className={`statusBlock statusBlock-${c.state}`}
+              style={c.rate >= 0 ? { backgroundColor: rateToColor(c.rate) } : undefined}
+            />
             {active === i && (
               <div className={`statusTooltip${posClass(i)}`}>
                 <span className="tooltipTime">{clock(c.startTime)} – {clock(c.endTime)}</span>
@@ -465,6 +715,7 @@ function StatusBar({ success, failure, recent }) {
                   <span className="tooltipStats">
                     <span className="tooltipSuccess">成功 {c.success}</span>
                     <span className="tooltipFailure">失败 {c.failure}</span>
+                    <span>({(c.rate * 100).toFixed(1)}%)</span>
                   </span>
                 ) : (
                   <span className="tooltipStats">无请求</span>
@@ -627,6 +878,221 @@ function CodexQuotaSection({ quota, brandIcon }) {
   );
 }
 
+function InfoIcon({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4" />
+      <path d="M12 8h.01" />
+    </svg>
+  );
+}
+
+function formatCountdown(when) {
+  if (!when) return '';
+  const target = new Date(when).getTime();
+  if (!Number.isFinite(target)) return '';
+  let seconds = Math.ceil((target - Date.now()) / 1000);
+  if (seconds <= 0) return '';
+  const days = Math.floor(seconds / 86400);
+  seconds %= 86400;
+  const hours = Math.floor(seconds / 3600);
+  seconds %= 3600;
+  const minutes = Math.floor(seconds / 60);
+  seconds %= 60;
+  const parts = [];
+  if (days) parts.push(`${days}天`);
+  if (hours || days) parts.push(`${hours}小时`);
+  if (minutes || hours || days) parts.push(`${minutes}分`);
+  parts.push(`${seconds}秒`);
+  return parts.join('');
+}
+
+function normalizeClineModelStates(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => ({ model: item?.model || item?.id || '', ...(item || {}) }))
+      .filter((item) => item.model);
+  }
+  if (!value || typeof value !== 'object') return [];
+  return Object.entries(value)
+    .map(([model, state]) => ({ model, ...(state && typeof state === 'object' ? state : {}) }))
+    .sort((a, b) => a.model.localeCompare(b.model));
+}
+
+function clineModelLabel(model) {
+  return String(model || '').replace(/^nexus\//i, '');
+}
+
+function ClineQuotaSection({ account, brandIcon }) {
+  const states = normalizeClineModelStates(account?.model_quotas);
+  const [, setClock] = useState(0);
+  const hasCountdown = states.some((state) => state.status === 'limited' && formatCountdown(state.reset_at));
+  useEffect(() => {
+    if (!hasCountdown) return undefined;
+    const timer = setInterval(() => setClock((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, [hasCountdown]);
+
+  if (account?.error) {
+    return <div className="quotaError">额度获取失败：{account.error}</div>;
+  }
+
+  const balance = account?.balance ?? account?.quotas?.[0]?.remaining;
+  const limited = states.filter((state) => state.status === 'limited');
+  const available = states.filter((state) => state.status === 'available');
+  const activeLimited = limited.filter((state) => !state.reset_at || formatCountdown(state.reset_at));
+  const summary = activeLimited.length
+    ? `已限制 ${activeLimited.length} 个模型`
+    : available.length
+      ? `最近确认 ${available.length} 个模型可用`
+      : '待检测';
+  const summaryClass = activeLimited.length ? 'clineStatusLimited' : available.length ? 'clineStatusAvailable' : 'clineStatusPending';
+
+  return (
+    <div className="quotaBox clineQuotaBox">
+      <div className="quotaHead">
+        <span className="quotaTitle">
+          {brandIcon && <img src={brandIcon} alt="" className="quotaBrandIcon" />}
+          {esc(account?.plan || 'Cline Free')}
+        </span>
+        {account?.email && <span className="quotaReset" title={account.email}>{account.email}</span>}
+      </div>
+
+      {balance != null && (
+        <div className="clineCredits">
+          <span>Credits</span>
+          <strong>{fmtNum(balance)}</strong>
+        </div>
+      )}
+
+      <div className="clineFreeStatus">
+        <div className="clineFreeStatusHead">
+          <span className="quotaItemHeadLabel">免费推理状态</span>
+          <span className={`clineStatus ${summaryClass}`}>{summary}</span>
+        </div>
+        {!states.length ? (
+          <div className="quotaEmpty">待检测：等待一次真实模型请求结果</div>
+        ) : (
+          <div className="clineModelList">
+            {states.map((state) => {
+              const countdown = state.status === 'limited' ? formatCountdown(state.reset_at) : '';
+              const expired = state.status === 'limited' && state.reset_at && !countdown;
+              let label = '待确认';
+              let className = 'clineStatusPending';
+              if (state.status === 'available') {
+                label = '最近可用';
+                className = 'clineStatusAvailable';
+              } else if (state.status === 'limited') {
+                label = countdown ? `限制中 · ${countdown}` : expired ? '等待真实请求确认' : '已达到上限';
+                className = countdown ? 'clineStatusLimited' : 'clineStatusPending';
+              }
+              return (
+                <div className="clineModelRow" key={state.model}>
+                  <code>{clineModelLabel(state.model)}</code>
+                  <span className={`clineStatus ${className}`}>{label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <div className="quotaMeta">状态来自最近一次真实请求；刷新只查询账户余额，不会主动调用模型</div>
+    </div>
+  );
+}
+
+function AntigravityQuotaSection({ quota }) {
+  if (!quota) return null;
+  const groups = quota.groups || [];
+  const serverTimeOffsetMs = Number(quota.serverTimeOffsetMs) || 0;
+  const [, setClock] = useState(0);
+  const hasResetTime = groups.some((group) => group.buckets?.some((bucket) => bucket.resetTime));
+  useEffect(() => {
+    if (!hasResetTime) return undefined;
+    const timer = setInterval(() => setClock((value) => value + 1), 30000);
+    return () => clearInterval(timer);
+  }, [hasResetTime]);
+
+  const nowMs = Date.now() + serverTimeOffsetMs;
+  const plan = quota.subscription?.plan || '';
+  const normalizedPlan = normalizeKey(plan).replace(/\s+/g, '-');
+  const isPremiumPlan = normalizedPlan === 'ultra' || normalizedPlan === 'ultra-lite';
+  const urgentResetId = groups
+    .flatMap((group) => group.buckets || [])
+    .filter((bucket) => {
+      const resetMs = new Date(bucket.resetTime).getTime();
+      return Number.isFinite(resetMs) && resetMs > nowMs && resetMs - nowMs < 60 * 60 * 1000;
+    })
+    .sort((a, b) => new Date(a.resetTime).getTime() - new Date(b.resetTime).getTime())[0]?.id || null;
+
+  return (
+    <div className="quotaSection antigravityQuotaSection">
+      {plan && (
+        <div className="codexPlan">
+          <span className="codexPlanItem">
+            <span className="codexPlanLabel">套餐</span>
+            <span className={isPremiumPlan ? 'premiumPlanValue' : 'codexPlanValue'}>{esc(plan)}</span>
+          </span>
+        </div>
+      )}
+      {groups.length === 0 && <div className="quotaEmpty">暂无模型额度数据</div>}
+      {groups.map((group) => (
+        <div className="antigravityQuotaGroup" key={group.id}>
+          <div className="antigravityQuotaGroupHeader">
+            <span className="antigravityQuotaGroupTitle">{translateAntigravityGroupLabel(group.label)}</span>
+            {group.description && (
+              <span className="antigravityQuotaGroupDescription">
+                {translateAntigravityDescription(group.description)}
+              </span>
+            )}
+          </div>
+          {(group.buckets || []).map((bucket) => {
+            const fraction = Math.max(0, Math.min(1, Number(bucket.remainingFraction) || 0));
+            const percent = fraction * 100;
+            const percentLabel = fraction >= 1 ? '额度可用' : `剩余 ${Math.round(percent)}%`;
+            const resetLabel = formatAntigravityResetLabel(bucket.resetTime, nowMs);
+            const isUrgent = bucket.id === urgentResetId;
+            const fillClass = percent >= 70 ? 'quotaBarFillHigh' : percent >= 30 ? 'quotaBarFillMedium' : 'quotaBarFillLow';
+            return (
+              <div className="quotaRow" key={bucket.id}>
+                <div className="quotaRowHeader">
+                  <span className="quotaModel" title={translateAntigravityDescription(bucket.description)}>
+                    {translateAntigravityBucketLabel(bucket.label)}
+                  </span>
+                  <div className="quotaMeta">
+                    <span className="quotaPercent">{percentLabel}</span>
+                    <span className={`quotaReset${isUrgent ? ' quotaResetRelativeSoon' : ''}`}>
+                      {resetLabel}
+                    </span>
+                  </div>
+                </div>
+                <div className="quotaBar">
+                  <i className={`quotaBarFill ${fillClass}`} style={{ width: `${percent}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AntigravityQuotaPlaceholder({ loading, error, hasAuthIndex, onRefresh }) {
+  return (
+    <div className="antigravityQuotaSection">
+      {error ? (
+        <div className="quotaError">额度获取失败：{error}</div>
+      ) : (
+        <button className="quotaMessage quotaMessageAction" onClick={onRefresh} disabled={!hasAuthIndex || loading}>
+          {loading ? '刷新中…' : hasAuthIndex ? '点击此处刷新额度' : '该凭证缺少运行时 auth_index'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function formatDate(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return esc(iso);
@@ -654,6 +1120,22 @@ function formatModified(value) {
   return `${p(date.getDate())}/${p(date.getMonth() + 1)}/${date.getFullYear()}, ${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`;
 }
 
+const HEALTHY_AUTH_FILE_STATUS_MESSAGES = new Set(['ok', 'healthy', 'ready', 'success', 'available']);
+
+function authFileStatusMessage(file) {
+  const raw = file?.status_message ?? file?.statusMessage;
+  if (typeof raw === 'string') return raw.trim();
+  if (raw == null) return '';
+  return String(raw).trim();
+}
+
+function hasAuthFileStatusWarning(file) {
+  const status = normalizeKey(file?.status);
+  if (file?.unavailable === true || status === 'error') return true;
+  const message = authFileStatusMessage(file);
+  return Boolean(message) && !HEALTHY_AUTH_FILE_STATUS_MESSAGES.has(message.toLowerCase());
+}
+
 // Detect provider from a CPA auth-file id (e.g. "codex-...", "kiro-...").
 function providerFromId(id) {
   const m = String(id || '').match(/^([a-z]+)-/i);
@@ -677,9 +1159,17 @@ function normalizeAuthFiles(files) {
       path: f.path || f.source || '',
       provider,
       type: provider,
+      project_id: f.project_id || f.projectId || '',
+      projectId: f.projectId || f.project_id || '',
+      metadata: f.metadata || null,
+      attributes: f.attributes || null,
       label: f.label || f.account || f.email || rawId,
       email: f.email || f.account || '',
       disabled: !!f.disabled,
+      status: f.status || '',
+      status_message: f.status_message ?? f.statusMessage ?? '',
+      statusMessage: f.statusMessage ?? f.status_message ?? '',
+      unavailable: f.unavailable === true || normalizeKey(f.unavailable) === 'true',
       success: Number(f.success) || 0,
       failed: Number(f.failed) || 0,
       recent_requests: Array.isArray(f.recent_requests) ? f.recent_requests : null,
@@ -706,6 +1196,10 @@ function normalizeAuthFiles(files) {
       existing.priority ??= mapped.priority;
       existing.weight ??= mapped.weight;
       existing.note = existing.note || mapped.note;
+      existing.status = existing.status || mapped.status;
+      existing.status_message = existing.status_message || mapped.status_message;
+      existing.statusMessage = existing.statusMessage || mapped.statusMessage;
+      existing.unavailable = existing.unavailable || mapped.unavailable;
       const sameRegistration =
         String(existing.path || '').trim() === String(mapped.path || '').trim() &&
         String(existing.auth_index || '').trim() === String(mapped.auth_index || '').trim();
@@ -739,7 +1233,11 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
   const account = providerKey === 'cline' && normalizeKey(rawAccount) === 'kiro' ? 'Cline' : rawAccount;
   const fileName = file.name || '';
   const disabled = !!file.disabled;
+  const rawStatusMessage = authFileStatusMessage(file);
+  const statusWarning = hasAuthFileStatusWarning(file);
   const isKiro = providerKey === 'kiro';
+  const isCline = providerKey === 'cline';
+  const isAntigravity = providerKey === 'antigravity';
   const isCodex = providerKey === 'codex';
   const avatarStyle = { backgroundColor: color.bg, color: color.text, ...(color.border ? { border: color.border } : {}) };
 
@@ -755,12 +1253,16 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
   const [codexQuota, setCodexQuota] = useState(null);
   const [codexLoading, setCodexLoading] = useState(false);
   const [codexError, setCodexError] = useState('');
+  const [antigravityQuota, setAntigravityQuota] = useState(null);
+  const [antigravityLoading, setAntigravityLoading] = useState(false);
+  const [antigravityError, setAntigravityError] = useState('');
   const [selected, setSelected] = useState(false);
   const [models, setModels] = useState(null);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState('');
+  const displayedClineQuota = quota || (isCline && file.model_quotas ? { model_quotas: file.model_quotas } : null);
 
   // 收起重新登录流程的三个步骤框（成功后调用，保留状态提示文案）。
   const closeReloginFlow = useCallback(() => {
@@ -786,7 +1288,23 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
     }
   }, [isCodex, mgmtKey, file]);
 
+  const refreshAntigravity = useCallback(async () => {
+    if (!isAntigravity) return;
+    setAntigravityLoading(true);
+    setAntigravityError('');
+    setAntigravityQuota(null);
+    try {
+      const data = await fetchAntigravityQuota(mgmtKey, file);
+      setAntigravityQuota(data);
+    } catch (e) {
+      setAntigravityError(e.message || '额度获取失败');
+    } finally {
+      setAntigravityLoading(false);
+    }
+  }, [file, isAntigravity, mgmtKey]);
+
   const refreshQuota = useCallback(async () => {
+    if (!isKiro && !isCline) return;
     setQuotaLoading(true);
     setQuotaOpen(true);
     try {
@@ -800,7 +1318,7 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
           {
             error: isKiro
               ? '未返回该凭证的额度'
-              : '该凭证由管理中心管理，Kiro 插件不查询其额度',
+              : '未返回该凭证的 Cline 免费状态',
           }
       );
     } catch (e) {
@@ -808,7 +1326,7 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
     } finally {
       setQuotaLoading(false);
     }
-  }, [mgmtKey, file.auth_index, file.name, isKiro]);
+  }, [mgmtKey, file.auth_index, file.name, isCline, isKiro]);
 
   const showModels = useCallback(async () => {
     setModelsLoading(true);
@@ -868,12 +1386,13 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
   }, [file.name, mgmtKey, onChanged]);
 
   // Broadcast quota refresh: bump refreshAll from the toolbar to refresh every
-  // card's quota at once (Kiro -> /quotaRequest, Codex -> live usage).
+  // card's quota at once (Kiro/Cline -> management quota, Codex/Antigravity -> live usage).
   useEffect(() => {
     if (!refreshAll) return;
-    if (isKiro && file.auth_index) refreshQuota();
+    if ((isKiro || isCline) && file.auth_index) refreshQuota();
+    else if (isAntigravity && file.auth_index) refreshAntigravity();
     else if (isCodex && file.auth_index) refreshCodex();
-  }, [refreshAll]);
+  }, [file.auth_index, isAntigravity, isCline, isCodex, isKiro, refreshAll, refreshAntigravity, refreshCodex, refreshQuota]);
 
   const startRelogin = useCallback(async () => {
     if (!file.auth_index) {
@@ -955,9 +1474,9 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
         <div className="identity">
           <div className="badgeRow">
             <span className="typeBadge" style={avatarStyle}>{label}</span>
-            <span className={`stateBadge ${disabled ? 'stateDisabled' : 'stateActive'}`}>
+            <span className={`stateBadge ${disabled ? 'stateDisabled' : statusWarning ? 'stateWarning' : 'stateActive'}`}>
               <span className="stateDot" aria-hidden="true" />
-              {disabled ? '停用' : '启用'}
+              {disabled ? '停用' : statusWarning ? '警告' : rawStatusMessage ? '健康' : '启用'}
             </span>
           </div>
           <span className="account" title={account}>{account}</span>
@@ -969,6 +1488,24 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
       {file.duplicate_count > 1 && (
         <p className="dupNote">⚠ 该凭证在 CPA 中注册了 {file.duplicate_count} 次（同一文件），已合并显示。建议在认证文件里删除多余条目。</p>
       )}
+
+      {rawStatusMessage && statusWarning && (
+        <div className="warning" title={rawStatusMessage}>
+          <InfoIcon size={14} />
+          <span>{rawStatusMessage}</span>
+        </div>
+      )}
+
+      <div className="health">
+        <div className="healthHead">
+          <span className="healthLabel">健康状态</span>
+          <span className="healthCounts">
+            <span className={`countOk ${(file.success || 0) > 0 ? 'countLive' : ''}`}>成功 {file.success || 0}</span>
+            <span className={`countFail ${(file.failed || 0) > 0 ? 'countLive' : ''}`}>失败 {file.failed || 0}</span>
+          </span>
+        </div>
+        <StatusBar success={file.success || 0} failure={file.failed || 0} recent={file.recent_requests} />
+      </div>
 
       <div className="metaRow">
         <span>{formatFileSize(file.size)}</span>
@@ -992,17 +1529,6 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
         )}
       </div>
 
-      <div className="health">
-        <div className="healthHead">
-          <span className="healthLabel">健康状态</span>
-          <span className="healthCounts">
-            <span className={`countOk ${(file.success || 0) > 0 ? 'countLive' : ''}`}>成功 {file.success || 0}</span>
-            <span className={`countFail ${(file.failed || 0) > 0 ? 'countLive' : ''}`}>失败 {file.failed || 0}</span>
-          </span>
-        </div>
-        <StatusBar success={file.success || 0} failure={file.failed || 0} recent={file.recent_requests} />
-      </div>
-
       {isKiro ? (
         quota && !quota.error ? (
           <QuotaSection account={quota} brandIcon={icon} />
@@ -1014,6 +1540,15 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
             {quotaOpen && !quotaLoading && quota?.error && <QuotaSection account={quota} brandIcon={icon} />}
           </>
         )
+      ) : isCline ? (
+        <>
+          {quotaOpen && <ClineQuotaSection account={displayedClineQuota} brandIcon={icon} />}
+          {(!quota || quota.error) && (
+            <button className="quotaTrigger" onClick={refreshQuota} disabled={quotaLoading}>
+              {quotaLoading ? '查询中…' : '点击此处刷新额度'}
+            </button>
+          )}
+        </>
       ) : isCodex ? (
         codexQuota ? (
           <CodexQuotaSection quota={codexQuota} brandIcon={icon} />
@@ -1024,6 +1559,17 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
             </button>
             {codexError && !codexLoading && <QuotaSection account={{ error: codexError }} brandIcon={icon} />}
           </>
+        )
+      ) : isAntigravity ? (
+        antigravityQuota ? (
+          <AntigravityQuotaSection quota={antigravityQuota} />
+        ) : (
+          <AntigravityQuotaPlaceholder
+            loading={antigravityLoading}
+            error={antigravityError}
+            hasAuthIndex={Boolean(file.auth_index)}
+            onRefresh={refreshAntigravity}
+          />
         )
       ) : (
         <div className="quotaMeta quotaEmpty">暂无额度信号，发起一次请求后由 CPA 采集</div>
@@ -1055,9 +1601,9 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
           </button>
           <button
             className="btn iconButton"
-            onClick={isKiro ? refreshQuota : isCodex ? refreshCodex : onChanged}
+            onClick={isKiro || isCline ? refreshQuota : isAntigravity ? refreshAntigravity : isCodex ? refreshCodex : onChanged}
             title="刷新额度"
-            disabled={quotaLoading || codexLoading}
+            disabled={quotaLoading || codexLoading || antigravityLoading}
           ><RefreshIcon /></button>
           <button className="btn iconButton" onClick={downloadFile} title="下载认证文件"><DownloadIcon /></button>
           <button className="btn iconButton dangerButton" onClick={deleteFile} title="删除认证文件" disabled={deleting}>

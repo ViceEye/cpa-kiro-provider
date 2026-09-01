@@ -22,6 +22,10 @@ type completionAccumulator struct {
 	ContextUse float64
 }
 
+func init() {
+	cline.SetRequestObserver(recordClineRequest)
+}
+
 func executeRequest(raw []byte) ([]byte, error) {
 	var req executorRequest
 	if errUnmarshal := json.Unmarshal(raw, &req); errUnmarshal != nil {

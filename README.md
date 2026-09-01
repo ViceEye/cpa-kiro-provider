@@ -7,10 +7,22 @@ CLIProxyAPI. It connects multiple credential and model sources behind one CPA
 provider identity. The current release supports Kiro and Cline OAuth.
 
 The production runtime consists only of CLIProxyAPI and
-`cpa-provider-nexus-v0.9.0.so`. Kiro Gateway is the protocol reference and is not a
+`cpa-provider-nexus-v0.9.1.so`. Kiro Gateway is the protocol reference and is not a
 sidecar or runtime dependency.
 
 ## Current release
+
+### v0.9.1 - 2026-09-01
+
+Compatibility and observability update:
+
+- Adds Cline request result tracking and free-tier status reporting.
+- Adds Antigravity quota refresh and grouped quota display through CPA's
+  management API.
+- Aligns the Nexus credential cards, health status, and quota presentation with
+  CPA's native auth-file card design.
+- Keeps the embedded console synchronized with the current Nexus branding and
+  provider model prefix.
 
 ### v0.9.0 - 2026-08-30
 
@@ -58,6 +70,7 @@ commit.
 | `v0.7.7` | 2026-08-29 | Unified auth record identity on the host's file-based ID so plugin saves upsert instead of duplicating credentials, kept host record IDs out of stored credential JSON, and made the console close the relogin flow after success. |
 | `v0.8.0` | 2026-08-30 | Added Cline OAuth, free-model execution, Cline credential cards, and the provider-selection login page. |
 | `v0.9.0` | 2026-08-30 | Renamed the plugin to CPA Provider Nexus and changed the public provider identity and model prefix to `nexus`. |
+| `v0.9.1` | 2026-09-01 | Added Antigravity quota refresh, aligned Nexus card status and quota presentation with CPA, and improved Cline request status tracking. |
 
 When Git history starts, use commits and tags as the source of truth for later
 releases instead of extending this reconstructed pre-Git history.
@@ -275,7 +288,7 @@ docker build --output type=local,dest=dist .
 The artifact is written to:
 
 ```text
-dist/linux/amd64/cpa-provider-nexus-v0.9.0.so
+dist/linux/amd64/cpa-provider-nexus-v0.9.1.so
 ```
 
 ## Install
@@ -285,11 +298,11 @@ subdirectory. Copy the versioned library using either layout:
 
 ```bash
 # Flat layout, such as the default /CLIProxyAPI/plugins mount:
-cp dist/linux/amd64/cpa-provider-nexus-v0.9.0.so plugins/
+cp dist/linux/amd64/cpa-provider-nexus-v0.9.1.so plugins/
 
 # Or platform-specific layout:
 mkdir -p plugins/linux/amd64
-cp dist/linux/amd64/cpa-provider-nexus-v0.9.0.so plugins/linux/amd64/
+cp dist/linux/amd64/cpa-provider-nexus-v0.9.1.so plugins/linux/amd64/
 ```
 
 Enable the plugin in `config.yaml`:

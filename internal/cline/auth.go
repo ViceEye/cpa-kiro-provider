@@ -65,6 +65,23 @@ func credentialID(cred credential) string {
 	return "cline-" + hex.EncodeToString(sum[:10])
 }
 
+// StableCredentialID returns the internal Cline credential ID used by request
+// statistics and management data. It prefers the persisted ID so rotating
+// refresh tokens do not split one account into multiple records.
+func StableCredentialID(raw []byte) string {
+	cred, err := decodeCredential(raw)
+	if err != nil {
+		return ""
+	}
+	if id := strings.TrimSpace(cred.AuthID); id != "" {
+		return id
+	}
+	if strings.TrimSpace(cred.Email) == "" && strings.TrimSpace(cred.RefreshToken) == "" {
+		return ""
+	}
+	return credentialID(cred)
+}
+
 func authDataFromCredential(cred credential) (authData, error) {
 	if strings.TrimSpace(cred.RefreshToken) == "" {
 		return authData{}, fmt.Errorf("Cline credential has no refresh token")

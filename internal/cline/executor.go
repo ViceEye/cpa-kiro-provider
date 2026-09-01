@@ -20,6 +20,7 @@ func Execute(raw []byte) ([]byte, error) {
 	if err != nil {
 		return errorEnvelope("invalid_auth", err.Error(), false, http.StatusUnauthorized), nil
 	}
+	authID := requestAuthID(req, cred)
 	if credentialNeedsRefresh(cred) {
 		refreshed, err := refreshCredential(cred, req.HostCallbackID)
 		if err != nil {
@@ -47,11 +48,13 @@ func Execute(raw []byte) ([]byte, error) {
 		Body: payload,
 	})
 	if err != nil {
+		observeRequest(authID, req.Model, false, err.Error())
 		return pluginError(statusErr("upstream_network_error", "Cline request failed: "+err.Error(), true, http.StatusBadGateway)), nil
 	}
 	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
 		refreshed, err := refreshCredential(cred, req.HostCallbackID)
 		if err != nil {
+			observeRequest(authID, req.Model, false, err.Error())
 			return pluginError(err), nil
 		}
 		cred = refreshed
@@ -70,18 +73,27 @@ func Execute(raw []byte) ([]byte, error) {
 			Body: payload,
 		})
 		if err != nil {
+			observeRequest(authID, req.Model, false, err.Error())
 			return pluginError(statusErr("upstream_network_error", "Cline request failed: "+err.Error(), true, http.StatusBadGateway)), nil
 		}
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		retryable := response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500
-		return errorEnvelope("upstream_error", truncateError(response.Body, response.StatusCode), retryable, response.StatusCode), nil
+		message := truncateError(response.Body, response.StatusCode)
+		observation := strings.TrimSpace(string(response.Body))
+		if observation == "" {
+			observation = message
+		}
+		observeRequest(authID, req.Model, false, observation)
+		return errorEnvelope("upstream_error", message, retryable, response.StatusCode), nil
 	}
 
 	inner, err := normalizeClineResponse(response.Body, req.Model)
 	if err != nil {
+		observeRequest(authID, req.Model, false, err.Error())
 		return errorEnvelope("upstream_error", err.Error(), false, http.StatusBadGateway), nil
 	}
+	observeRequest(authID, req.Model, true, "")
 	return okEnvelope(executorResponse{
 		Payload:  inner,
 		Headers:  http.Header{"Content-Type": []string{"application/json"}},
@@ -100,6 +112,7 @@ func ExecuteStream(raw []byte) ([]byte, error) {
 	if err != nil {
 		return errorEnvelope("invalid_auth", err.Error(), false, http.StatusUnauthorized), nil
 	}
+	authID := requestAuthID(req, cred)
 	if credentialNeedsRefresh(cred) {
 		refreshed, err := refreshCredential(cred, req.HostCallbackID)
 		if err != nil {
@@ -130,70 +143,92 @@ func ExecuteStream(raw []byte) ([]byte, error) {
 		Body: payload,
 	})
 	if err != nil {
+		observeRequest(authID, req.Model, false, err.Error())
 		return pluginError(statusErr("upstream_network_error", "Cline stream failed: "+err.Error(), true, http.StatusBadGateway)), nil
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		// Stream-mode error responses carry the body inline (no stream id);
-		// drain nothing — report the status directly.
-		return errorEnvelope("upstream_error", fmt.Sprintf("Cline upstream error (%d)", response.StatusCode),
+		body, errRead := readAllHostHTTPStream(response.StreamID)
+		closeHostHTTPStream(response.StreamID)
+		message := truncateError(body, response.StatusCode)
+		if errRead != nil && len(body) == 0 {
+			message = fmt.Sprintf("Cline upstream error (%d): %s", response.StatusCode, errRead.Error())
+		}
+		observation := strings.TrimSpace(string(body))
+		if observation == "" {
+			observation = message
+		}
+		observeRequest(authID, req.Model, false, observation)
+		return errorEnvelope("upstream_error", message,
 			response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= 500, response.StatusCode), nil
 	}
 
-	go consumeStream(req.StreamID, response.StreamID, req.Model)
+	go consumeStream(req.StreamID, response.StreamID, authID, req.Model)
 	return okEnvelope(map[string]any{"headers": http.Header{"Content-Type": []string{"text/event-stream"}}})
 }
 
 // consumeStream relays upstream SSE to the host stream, unwrapping the
 // {"data": {...}} envelope per chunk when present.
-func consumeStream(pluginStreamID, upstreamStreamID, model string) {
-	closed := false
-	closeStream := func(message string) {
-		if closed {
-			return
+func consumeStream(pluginStreamID, upstreamStreamID, authID, model string) {
+	streamError := ""
+	completed := false
+	defer func() {
+		if completed {
+			observeRequest(authID, model, true, "")
+		} else if streamError != "" {
+			observeRequest(authID, model, false, streamError)
 		}
-		closed = true
-		closePluginStream(pluginStreamID, message)
-	}
-	defer closeStream("")
+		closePluginStream(pluginStreamID, streamError)
+	}()
 	relay := newSSERelay(model)
 	for {
 		chunk, err := readHostHTTPStream(upstreamStreamID)
 		if err != nil {
-			closeStream(err.Error())
+			streamError = err.Error()
 			return
 		}
 		if len(chunk.Payload) > 0 {
 			frames, relayErr := relay.Feed(chunk.Payload)
 			if relayErr != nil {
-				closeStream(relayErr.Error())
+				streamError = relayErr.Error()
 				return
 			}
 			for _, frame := range frames {
 				if err := emitPluginStream(pluginStreamID, frame); err != nil {
-					closeStream(err.Error())
+					streamError = err.Error()
 					return
 				}
 			}
 		}
 		if chunk.Error != "" {
-			closeStream(chunk.Error)
+			streamError = chunk.Error
 			return
 		}
 		if chunk.Done {
 			frames, relayErr := relay.Finish()
 			if relayErr != nil {
-				closeStream(relayErr.Error())
+				streamError = relayErr.Error()
 				return
 			}
 			for _, frame := range frames {
 				if err := emitPluginStream(pluginStreamID, frame); err != nil {
-					closeStream(err.Error())
+					streamError = err.Error()
 					return
 				}
 			}
+			completed = true
 			return
 		}
 	}
+}
+
+func requestAuthID(req executorRequest, cred credential) string {
+	if authID := strings.TrimSpace(cred.AuthID); authID != "" {
+		return authID
+	}
+	if strings.TrimSpace(cred.Email) != "" || strings.TrimSpace(cred.RefreshToken) != "" {
+		return credentialID(cred)
+	}
+	return strings.TrimSpace(req.AuthID)
 }
 
 // relaySSE is kept for single-chunk callers and tests. Runtime streaming uses

@@ -24,12 +24,26 @@ var (
 		return hostHTTPStreamReadResponse{}, errors.New("host unavailable")
 	}
 	callHostCall = func(string, any) (json.RawMessage, error) { return nil, errors.New("host unavailable") }
+	requestObserver func(authID, model string, success bool, message string)
 )
 
 // SetHostCaller wires the host function table (called from main.go).
 func SetHostCaller(caller func(string, any) (json.RawMessage, error)) {
 	if caller != nil {
 		callHostCall = caller
+	}
+}
+
+// SetRequestObserver lets the provider package observe completed Cline model
+// requests without creating an import cycle. Management and token-refresh
+// calls never invoke this hook.
+func SetRequestObserver(observer func(authID, model string, success bool, message string)) {
+	requestObserver = observer
+}
+
+func observeRequest(authID, model string, success bool, message string) {
+	if requestObserver != nil {
+		requestObserver(authID, model, success, message)
 	}
 }
 
@@ -106,6 +120,30 @@ func readHostHTTPStream(streamID string) (hostHTTPStreamReadResponse, error) {
 		return hostHTTPStreamReadResponse{}, err
 	}
 	return response, nil
+}
+
+func readAllHostHTTPStream(streamID string) ([]byte, error) {
+	var body []byte
+	for {
+		chunk, errRead := readHostHTTPStream(streamID)
+		if errRead != nil {
+			return body, errRead
+		}
+		body = append(body, chunk.Payload...)
+		if chunk.Error != "" {
+			return body, fmt.Errorf("%s", chunk.Error)
+		}
+		if chunk.Done {
+			return body, nil
+		}
+	}
+}
+
+func closeHostHTTPStream(streamID string) {
+	if streamID == "" {
+		return
+	}
+	_, _ = callHostCall("host.http.stream_close", map[string]string{"stream_id": streamID})
 }
 
 type envelope struct {

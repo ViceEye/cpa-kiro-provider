@@ -18,12 +18,25 @@ type quotaAccount struct {
 	Label            string                `json:"label,omitempty"`
 	Status           string                `json:"status"`
 	Error            string                `json:"error,omitempty"`
+	Plan             string                `json:"plan,omitempty"`
+	Balance          *float64              `json:"balance,omitempty"`
+	Unit             string                `json:"unit,omitempty"`
+	Email            string                `json:"email,omitempty"`
+	Quotas           []quotaCredit         `json:"quotas,omitempty"`
+	ModelQuotas      map[string]clineModelSnapshot `json:"model_quotas,omitempty"`
 	Subscription     string                `json:"subscription,omitempty"`
 	SubscriptionType string                `json:"subscription_type,omitempty"`
 	OverageStatus    string                `json:"overage_status,omitempty"`
 	DaysUntilReset   int64                 `json:"days_until_reset,omitempty"`
 	NextReset        string                `json:"next_reset,omitempty"`
 	Usage            []quotaUsageBreakdown `json:"usage,omitempty"`
+}
+
+type quotaCredit struct {
+	Name      string  `json:"name"`
+	Remaining float64 `json:"remaining"`
+	Unlimited bool    `json:"unlimited,omitempty"`
+	Unit      string  `json:"unit,omitempty"`
 }
 
 type quotaUsageBreakdown struct {
@@ -58,12 +71,12 @@ func registerManagement() ([]byte, error) {
 			map[string]any{
 				"Method":      http.MethodGet,
 				"Path":        "plugins/cpa-provider-nexus/quota",
-				"Description": "Returns sanitized Kiro subscription and credit quota data for all Kiro auths.",
+				"Description": "Returns sanitized Kiro quota, Cline balance, and observed Cline model-limit data.",
 			},
 			map[string]any{
 				"Method":      http.MethodPost,
 				"Path":        "plugins/cpa-provider-nexus/quotaRequest",
-				"Description": "Refreshes sanitized Kiro subscription and credit quota data for all Kiro auths.",
+				"Description": "Refreshes Kiro quota and Cline balance without sending model requests.",
 			},
 			map[string]any{
 				"Method":      http.MethodGet,
@@ -194,6 +207,9 @@ func handleCredentialRecords() ([]byte, error) {
 				record["success"] = snap.Success
 				record["failed"] = snap.Failure
 				record["history"] = snap.History
+				if len(snap.ClineModels) > 0 {
+					record["model_quotas"] = snap.ClineModels
+				}
 				if snap.LastRequest != "" {
 					record["last_request"] = snap.LastRequest
 				}
@@ -206,7 +222,7 @@ func handleCredentialRecords() ([]byte, error) {
 	})})
 }
 
-// credentialAuthID resolves the stable kiro auth_id for a listed credential so
+// credentialAuthID resolves the stable provider auth_id for a listed credential so
 // in-memory request stats can be matched to it.
 func credentialAuthID(entry hostAuthFileEntry) string {
 	if entry.AuthIndex == "" {
@@ -219,6 +235,11 @@ func credentialAuthID(entry hostAuthFileEntry) string {
 	var auth hostAuthGetResponse
 	if json.Unmarshal(result, &auth) != nil {
 		return ""
+	}
+	if credentialTypeMarker(auth.JSON) == cline.TypeMarker {
+		if stable := cline.StableCredentialID(auth.JSON); stable != "" {
+			return stable
+		}
 	}
 	cred, errCred := decodeCredential(auth.JSON)
 	if errCred != nil {
@@ -270,7 +291,9 @@ func loadKiroQuotas(callbackID string) ([]quotaAccount, error) {
 	}
 	accounts := make([]quotaAccount, 0)
 	for _, entry := range list.Files {
-		if entry.Disabled || (!strings.EqualFold(entry.Provider, providerID) && !strings.EqualFold(entry.Type, providerID)) {
+		isNexus := strings.EqualFold(entry.Provider, providerID) || strings.EqualFold(entry.Type, providerID)
+		isCline := strings.EqualFold(entry.Provider, cline.TypeMarker) || strings.EqualFold(entry.Type, cline.TypeMarker)
+		if entry.Disabled || (!isNexus && !isCline) {
 			continue
 		}
 		account := quotaAccount{AuthIndex: entry.AuthIndex, Name: entry.Name, Label: entry.Label, Status: "error"}
@@ -283,7 +306,7 @@ func loadKiroQuotas(callbackID string) ([]quotaAccount, error) {
 		// to the cline protocol layer.
 		if storageJSON, typeMarker := credentialStorageJSONByIndex(callbackID, entry.AuthIndex); typeMarker == cline.TypeMarker {
 			raw := mustJSON(map[string]any{
-				"Body":           mustJSON(map[string]any{"StorageJSON": json.RawMessage(storageJSON), "auth_index": entry.AuthIndex, "host_callback_id": callbackID}),
+				"Body":           mustJSON(map[string]any{"StorageJSON": []byte(storageJSON), "auth_index": entry.AuthIndex, "host_callback_id": callbackID}),
 				"HostCallbackID": callbackID,
 			})
 			clineRaw, errUsage := cline.Usage(raw)
@@ -299,6 +322,7 @@ func loadKiroQuotas(callbackID string) ([]quotaAccount, error) {
 				account = clineAccounts[0]
 				account.AuthIndex = entry.AuthIndex
 				account.Name = entry.Name
+				account.ModelQuotas = clineModelQuotas(storageJSON)
 			} else {
 				account.Error = "cline quota returned no account"
 			}
@@ -313,6 +337,18 @@ func loadKiroQuotas(callbackID string) ([]quotaAccount, error) {
 		accounts = append(accounts, account)
 	}
 	return accounts, nil
+}
+
+func clineModelQuotas(storageJSON string) map[string]clineModelSnapshot {
+	authID := cline.StableCredentialID([]byte(storageJSON))
+	if authID == "" {
+		return nil
+	}
+	snap, ok := statFor(authID)
+	if !ok || len(snap.ClineModels) == 0 {
+		return nil
+	}
+	return snap.ClineModels
 }
 
 func loadKiroQuotaAccount(account *quotaAccount, callbackID string) error {
@@ -498,14 +534,19 @@ func parseClineUsageEnvelope(raw []byte) ([]quotaAccount, error) {
 	if err := json.Unmarshal(raw, &env); err != nil || !env.OK {
 		return nil, fmt.Errorf("cline quota envelope invalid")
 	}
-	var bodyStr string
-	if err := json.Unmarshal(env.Result.Body, &bodyStr); err != nil {
-		return nil, fmt.Errorf("cline quota body not a string")
+	var body []byte
+	if err := json.Unmarshal(env.Result.Body, &body); err != nil {
+		var bodyString string
+		if errString := json.Unmarshal(env.Result.Body, &bodyString); errString != nil {
+			body = append([]byte(nil), env.Result.Body...)
+		} else {
+			body = []byte(bodyString)
+		}
 	}
 	var parsed struct {
 		Accounts []quotaAccount `json:"accounts"`
 	}
-	if err := json.Unmarshal([]byte(bodyStr), &parsed); err != nil {
+	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("decode cline quota accounts: %w", err)
 	}
 	return parsed.Accounts, nil
