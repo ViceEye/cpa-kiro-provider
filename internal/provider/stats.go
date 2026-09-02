@@ -18,7 +18,7 @@ import (
 const statsHistoryLimit = 40
 
 var (
-	clineRetryAfterPattern = regexp.MustCompile(`(?i)try again in[[:space:]]+([0-9]+[[:space:]]*[dhms]([[:space:]]*[0-9]+[[:space:]]*[dhms])*)`)
+	clineRetryAfterPattern   = regexp.MustCompile(`(?i)try again in[[:space:]]+([0-9]+[[:space:]]*[dhms]([[:space:]]*[0-9]+[[:space:]]*[dhms])*)`)
 	clineDurationPartPattern = regexp.MustCompile(`([0-9]+)[[:space:]]*([dhms])`)
 )
 

@@ -23,7 +23,7 @@ var (
 	readHostHTTPStreamCall = func(streamID string) (hostHTTPStreamReadResponse, error) {
 		return hostHTTPStreamReadResponse{}, errors.New("host unavailable")
 	}
-	callHostCall = func(string, any) (json.RawMessage, error) { return nil, errors.New("host unavailable") }
+	callHostCall    = func(string, any) (json.RawMessage, error) { return nil, errors.New("host unavailable") }
 	requestObserver func(authID, model string, success bool, message string)
 )
 

@@ -13,23 +13,23 @@ import (
 )
 
 type quotaAccount struct {
-	AuthIndex        string                `json:"auth_index"`
-	Name             string                `json:"name"`
-	Label            string                `json:"label,omitempty"`
-	Status           string                `json:"status"`
-	Error            string                `json:"error,omitempty"`
-	Plan             string                `json:"plan,omitempty"`
-	Balance          *float64              `json:"balance,omitempty"`
-	Unit             string                `json:"unit,omitempty"`
-	Email            string                `json:"email,omitempty"`
-	Quotas           []quotaCredit         `json:"quotas,omitempty"`
+	AuthIndex        string                        `json:"auth_index"`
+	Name             string                        `json:"name"`
+	Label            string                        `json:"label,omitempty"`
+	Status           string                        `json:"status"`
+	Error            string                        `json:"error,omitempty"`
+	Plan             string                        `json:"plan,omitempty"`
+	Balance          *float64                      `json:"balance,omitempty"`
+	Unit             string                        `json:"unit,omitempty"`
+	Email            string                        `json:"email,omitempty"`
+	Quotas           []quotaCredit                 `json:"quotas,omitempty"`
 	ModelQuotas      map[string]clineModelSnapshot `json:"model_quotas,omitempty"`
-	Subscription     string                `json:"subscription,omitempty"`
-	SubscriptionType string                `json:"subscription_type,omitempty"`
-	OverageStatus    string                `json:"overage_status,omitempty"`
-	DaysUntilReset   int64                 `json:"days_until_reset,omitempty"`
-	NextReset        string                `json:"next_reset,omitempty"`
-	Usage            []quotaUsageBreakdown `json:"usage,omitempty"`
+	Subscription     string                        `json:"subscription,omitempty"`
+	SubscriptionType string                        `json:"subscription_type,omitempty"`
+	OverageStatus    string                        `json:"overage_status,omitempty"`
+	DaysUntilReset   int64                         `json:"days_until_reset,omitempty"`
+	NextReset        string                        `json:"next_reset,omitempty"`
+	Usage            []quotaUsageBreakdown         `json:"usage,omitempty"`
 }
 
 type quotaCredit struct {
