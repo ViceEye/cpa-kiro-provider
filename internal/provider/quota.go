@@ -80,6 +80,16 @@ func registerManagement() ([]byte, error) {
 			},
 			map[string]any{
 				"Method":      http.MethodGet,
+				"Path":        "plugins/cpa-provider-nexus/quota-triggers",
+				"Description": "Returns scheduled Codex and Antigravity model activation plans.",
+			},
+			map[string]any{
+				"Method":      http.MethodPost,
+				"Path":        "plugins/cpa-provider-nexus/quota-triggers/run",
+				"Description": "Runs one configured model activation plan immediately.",
+			},
+			map[string]any{
+				"Method":      http.MethodGet,
 				"Path":        "plugins/cpa-provider-nexus/credentials",
 				"Description": "Returns sanitized CPA credential records and request statistics.",
 			},
@@ -140,6 +150,18 @@ func handleManagement(raw []byte) ([]byte, error) {
 	}
 	if path == "/plugins/cpa-provider-nexus/oauth/callback" {
 		return handleBrowserCallbackManagement(req)
+	}
+	if path == "/plugins/cpa-provider-nexus/quota-triggers" {
+		if !strings.EqualFold(req.Method, http.MethodGet) {
+			return okEnvelope(managementResponse{StatusCode: http.StatusMethodNotAllowed, Headers: jsonHeaders(), Body: mustJSON(map[string]any{"error": "method_not_allowed"})})
+		}
+		return handleQuotaTriggersGet()
+	}
+	if path == "/plugins/cpa-provider-nexus/quota-triggers/run" {
+		if !strings.EqualFold(req.Method, http.MethodPost) {
+			return okEnvelope(managementResponse{StatusCode: http.StatusMethodNotAllowed, Headers: jsonHeaders(), Body: mustJSON(map[string]any{"error": "method_not_allowed"})})
+		}
+		return handleQuotaTriggerRun(req)
 	}
 	if path == "/plugins/cpa-provider-nexus/credentials" {
 		if !strings.EqualFold(req.Method, http.MethodGet) {
@@ -494,18 +516,6 @@ func unixFloatTime(value float64) string {
 	seconds := int64(value)
 	nanos := int64((value - float64(seconds)) * float64(time.Second))
 	return time.Unix(seconds, nanos).UTC().Format(time.RFC3339)
-}
-
-func jsonHeaders() http.Header {
-	return http.Header{
-		"Content-Type":  []string{"application/json; charset=utf-8"},
-		"Cache-Control": []string{"no-store"},
-	}
-}
-
-func mustJSON(value any) []byte {
-	raw, _ := json.Marshal(value)
-	return raw
 }
 
 // credentialStorageJSONByIndex fetches the raw auth-file JSON for an

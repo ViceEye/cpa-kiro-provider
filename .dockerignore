@@ -17,6 +17,7 @@ config.yaml
 *.db
 
 # Local tooling and build output.
+temp
 __pycache__
 *.pyc
 .idea

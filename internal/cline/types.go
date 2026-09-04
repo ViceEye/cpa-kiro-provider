@@ -8,19 +8,11 @@ import (
 const (
 	apiBase     = "https://api.cline.bot"
 	chatPath    = "/api/v1/chat/completions"
-	modelsPath  = "/api/v1/models"
 	refreshPath = "/api/v1/auth/refresh"
 	mePath      = "/api/v1/users/me"
 	balanceFmt  = "/api/v1/users/%s/balance"
 	modelPrefix = "nexus/"
 )
-
-// clineIdentityHeaders mirrors the identity headers the Cline client sends.
-var clineIdentityHeaders = map[string]string{
-	"HTTP-Referer":  "https://cline.bot",
-	"X-Title":       "Cline",
-	"X-CLIENT-TYPE": "cline-provider",
-}
 
 // statusErr builds a statusError.
 func statusErr(code, message string, retryable bool, status int) statusError {

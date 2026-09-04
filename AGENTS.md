@@ -10,6 +10,8 @@ CLIProxyAPI（CPA）的独立 Linux 原生插件（AGPL-3.0），以 `nexus` Pro
 | --- | --- |
 | `cmd/cpa-provider-nexus/` | 插件入口。C ABI（`cliproxy_plugin_init` 等），通过 JSON 信封 `{ok, result, error}` 与 CPA 宿主双向 RPC |
 | `internal/provider/` | 核心：方法分发（`handler.go`）、OAuth/登录（`oauth.go`、`oauth_management.go`、`console_oauth.go`、`relogin.go`）、凭据（`credentials.go`、`auth.go`）、执行（`executor.go`）、模型（`models.go`）、配额（`quota.go`）、管理路由（`service.go`、`stats.go`） |
+| `internal/pluginrpc/` | Kiro/Cline 共用的 CPA 宿主回调、HTTP 流、envelope 和管理响应底座 |
+| `internal/quotaactivation/` | 复用 quota-activation 的 Codex/Antigravity 唤醒请求构建与严格响应判定 |
 | `internal/provider/console/` | 内嵌控制台成品（单文件 `index.html`，go:embed 进 `.so`） |
 | `internal/provider/console-ui/` | 控制台 React/Vite 源码（`src/main.jsx`） |
 | `internal/chat/` | OpenAI ↔ Kiro 请求/响应转换（历史归一化、工具 schema 修复、900 KiB 降级） |

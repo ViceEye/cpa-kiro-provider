@@ -1,30 +1,32 @@
 package provider
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"sync/atomic"
 
+	"github.com/ViceEye/cpa-provider-nexus/internal/pluginrpc"
 	"gopkg.in/yaml.v3"
 )
 
 var configValue atomic.Value
 
 var (
-	hostHTTPDoCall         = hostHTTPDo
-	hostHTTPDoStreamCall   = hostHTTPDoStream
-	readHostHTTPStreamCall = readHostHTTPStream
-	callHostCall           = func(string, any) (json.RawMessage, error) { return nil, errors.New("host callback is unavailable") }
+	hostHTTPDoCall       = func(req hostHTTPRequest) (hostHTTPResponse, error) { return pluginrpc.DoWithCaller(callHostCall, req) }
+	hostHTTPDoStreamCall = func(req hostHTTPRequest) (hostHTTPStreamResponse, error) {
+		return pluginrpc.DoStreamWithCaller(callHostCall, req)
+	}
+	readHostHTTPStreamCall = func(streamID string) (hostHTTPStreamReadResponse, error) {
+		return pluginrpc.ReadStreamWithCaller(callHostCall, streamID)
+	}
+	callHostCall = pluginrpc.Call
 )
 
 func SetHostCaller(caller func(string, any) (json.RawMessage, error)) {
 	if caller != nil {
-		callHostCall = caller
+		pluginrpc.SetCaller(caller)
 	}
 }
 
@@ -93,6 +95,7 @@ func applyConfig(raw []byte) {
 		config.ImportMode = normalizeMode(config.ImportMode)
 		config.LoginMode = normalizeLoginMode(config.LoginMode)
 		configValue.Store(config)
+		configureQuotaTriggerSchedules(config.QuotaTriggers)
 	}
 }
 
@@ -119,6 +122,7 @@ func registration(raw []byte) ([]byte, error) {
 				map[string]any{"Name": "runtime_base_url", "Type": "string", "Description": "Optional Kiro runtime base URL override for private gateways and tests."},
 				map[string]any{"Name": "model_discovery_url", "Type": "string", "Description": "Optional Kiro ListAvailableModels service endpoint override. Defaults to https://q.{region}.amazonaws.com/."},
 				map[string]any{"Name": "usage_url", "Type": "string", "Description": "Optional Kiro GetUsageLimits service endpoint override. Defaults to https://q.{region}.amazonaws.com/."},
+				map[string]any{"Name": "quota_triggers", "Type": "array", "Description": "Daily Codex and Antigravity model activation plans persisted in the Nexus console."},
 			},
 		},
 		"capabilities": map[string]any{
@@ -166,97 +170,44 @@ func executeCommandLine(raw []byte) ([]byte, error) {
 	return okEnvelope(commandLineExecutionResponse{Stdout: []byte(message), Auths: auths, ExitCode: 0})
 }
 
-func hostHTTPDo(req hostHTTPRequest) (hostHTTPResponse, error) {
-	result, errCall := callHostCall("host.http.do", req)
-	if errCall != nil {
-		return hostHTTPResponse{}, errCall
-	}
-	var response hostHTTPResponse
-	if errJSON := json.Unmarshal(result, &response); errJSON != nil {
-		return response, errJSON
-	}
-	return response, nil
-}
-
-func hostHTTPDoStream(req hostHTTPRequest) (hostHTTPStreamResponse, error) {
-	result, errCall := callHostCall("host.http.do_stream", req)
-	if errCall != nil {
-		return hostHTTPStreamResponse{}, errCall
-	}
-	var response hostHTTPStreamResponse
-	if errJSON := json.Unmarshal(result, &response); errJSON != nil {
-		return response, errJSON
-	}
-	return response, nil
-}
-
-func readHostHTTPStream(streamID string) (hostHTTPStreamReadResponse, error) {
-	result, errCall := callHostCall("host.http.stream_read", map[string]string{"stream_id": streamID})
-	if errCall != nil {
-		return hostHTTPStreamReadResponse{}, errCall
-	}
-	var response hostHTTPStreamReadResponse
-	if errJSON := json.Unmarshal(result, &response); errJSON != nil {
-		return response, errJSON
-	}
-	return response, nil
-}
-
 func readAllHostHTTPStream(streamID string) ([]byte, error) {
-	var body []byte
-	for {
-		chunk, errRead := readHostHTTPStream(streamID)
-		if errRead != nil {
-			return body, errRead
-		}
-		body = append(body, chunk.Payload...)
-		if chunk.Error != "" {
-			return body, fmt.Errorf("%s", chunk.Error)
-		}
-		if chunk.Done {
-			return body, nil
-		}
-	}
+	return pluginrpc.ReadAllStreamWithCaller(callHostCall, streamID)
 }
 
 func closeHostHTTPStream(streamID string) {
-	if streamID == "" {
-		return
-	}
-	_, _ = callHostCall("host.http.stream_close", map[string]string{"stream_id": streamID})
+	pluginrpc.CloseStreamWithCaller(callHostCall, streamID)
 }
 
 func emitPluginStream(streamID string, payload []byte) error {
-	_, errCall := callHostCall("host.stream.emit", map[string]any{"stream_id": streamID, "payload": payload})
-	return errCall
+	return pluginrpc.EmitStreamWithCaller(callHostCall, streamID, payload)
 }
 
 func closePluginStream(streamID, errorMessage string) {
-	_, _ = callHostCall("host.stream.close", map[string]any{"stream_id": streamID, "error": errorMessage})
+	pluginrpc.ClosePluginStreamWithCaller(callHostCall, streamID, errorMessage)
 }
 
 func okEnvelope(value any) ([]byte, error) {
-	result, errMarshal := json.Marshal(value)
-	if errMarshal != nil {
-		return nil, errMarshal
-	}
-	return json.Marshal(envelope{OK: true, Result: result})
+	return pluginrpc.OK(value)
 }
 
 func errorEnvelope(code, message string, retryable bool, status int) []byte {
-	raw, _ := json.Marshal(envelope{OK: false, Error: &envelopeError{Code: code, Message: message, Retryable: retryable, HTTPStatus: status}})
-	return raw
+	return pluginrpc.Error(code, message, retryable, status)
+}
+
+func mustJSON(value any) []byte {
+	return pluginrpc.MustJSON(value)
+}
+
+func jsonHeaders() http.Header {
+	return pluginrpc.JSONHeaders()
+}
+
+func managementJSON(status int, body map[string]any) []byte {
+	return pluginrpc.ManagementJSON(status, body)
 }
 
 func randomID() string {
-	bytes := make([]byte, 16)
-	if _, errRead := rand.Read(bytes); errRead != nil {
-		return hex.EncodeToString([]byte(fmt.Sprintf("%p", &bytes)))
-	}
-	bytes[6] = (bytes[6] & 0x0f) | 0x40
-	bytes[8] = (bytes[8] & 0x3f) | 0x80
-	hexValue := hex.EncodeToString(bytes)
-	return hexValue[:8] + "-" + hexValue[8:12] + "-" + hexValue[12:16] + "-" + hexValue[16:20] + "-" + hexValue[20:]
+	return pluginrpc.RandomID()
 }
 
 func pluginHTTPStatus(err error) int {

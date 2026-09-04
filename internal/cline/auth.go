@@ -32,6 +32,19 @@ func buildAPIHeaders(accessToken string, extra map[string]string) map[string]str
 	return headers
 }
 
+func clineHTTPHeaders(accessToken, accept string) http.Header {
+	extra := map[string]string{"Content-Type": "application/json"}
+	if accept != "" {
+		extra["Accept"] = accept
+	}
+	values := buildAPIHeaders(accessToken, extra)
+	headers := make(http.Header, len(values))
+	for key, value := range values {
+		headers.Set(key, value)
+	}
+	return headers
+}
+
 func decodeCredential(raw []byte) (credential, error) {
 	var cred credential
 	if len(raw) == 0 {

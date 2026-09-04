@@ -7,10 +7,21 @@ CLIProxyAPI. It connects multiple credential and model sources behind one CPA
 provider identity. The current release supports Kiro and Cline OAuth.
 
 The production runtime consists only of CLIProxyAPI and
-`cpa-provider-nexus-v0.9.1.so`. Kiro Gateway is the protocol reference and is not a
+`cpa-provider-nexus-v0.9.5.so`. Kiro Gateway is the protocol reference and is not a
 sidecar or runtime dependency.
 
 ## Current release
+
+### v0.9.5 - 2026-09-04
+
+Quota activation usability update:
+
+- Adds daily scheduled real-model quota activation for Codex and Antigravity,
+  with account, model, timezone, enable/disable, and immediate-run controls.
+- Presents the quota activation configuration as an in-place popup with its own
+  scroll area, backdrop dismissal, and Escape-key dismissal.
+- Keeps the scheduler configuration persisted in the Nexus plugin without
+  requiring changes to CPA source code.
 
 ### v0.9.1 - 2026-09-01
 
@@ -71,6 +82,7 @@ commit.
 | `v0.8.0` | 2026-08-30 | Added Cline OAuth, free-model execution, Cline credential cards, and the provider-selection login page. |
 | `v0.9.0` | 2026-08-30 | Renamed the plugin to CPA Provider Nexus and changed the public provider identity and model prefix to `nexus`. |
 | `v0.9.1` | 2026-09-01 | Added Antigravity quota refresh, aligned Nexus card status and quota presentation with CPA, and improved Cline request status tracking. |
+| `v0.9.5` | 2026-09-04 | Added scheduled Codex and Antigravity quota activation with popup-based configuration. |
 
 When Git history starts, use commits and tags as the source of truth for later
 releases instead of extending this reconstructed pre-Git history.
@@ -266,6 +278,7 @@ short-lived authorization code.
 ```text
 cmd/cpa-provider-nexus/      Native C ABI entry point
 internal/provider/      CPA/Kiro orchestration, OAuth, credentials and quota
+internal/pluginrpc/     Shared CPA host callbacks, envelopes, and stream helpers
 internal/chat/          OpenAI Chat Completions to Kiro request conversion
 internal/eventstream/   AWS Event Stream parser
 internal/jsonx/         Shared JSON value helpers
@@ -288,7 +301,7 @@ docker build --output type=local,dest=dist .
 The artifact is written to:
 
 ```text
-dist/linux/amd64/cpa-provider-nexus-v0.9.1.so
+dist/linux/amd64/cpa-provider-nexus-v0.9.5.so
 ```
 
 ## Install
@@ -298,11 +311,11 @@ subdirectory. Copy the versioned library using either layout:
 
 ```bash
 # Flat layout, such as the default /CLIProxyAPI/plugins mount:
-cp dist/linux/amd64/cpa-provider-nexus-v0.9.1.so plugins/
+cp dist/linux/amd64/cpa-provider-nexus-v0.9.5.so plugins/
 
 # Or platform-specific layout:
 mkdir -p plugins/linux/amd64
-cp dist/linux/amd64/cpa-provider-nexus-v0.9.1.so plugins/linux/amd64/
+cp dist/linux/amd64/cpa-provider-nexus-v0.9.5.so plugins/linux/amd64/
 ```
 
 Enable the plugin in `config.yaml`:

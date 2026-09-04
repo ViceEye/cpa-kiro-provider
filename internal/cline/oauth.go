@@ -220,5 +220,3 @@ func stringFromMetadata(metadata map[string]any, key string) string {
 	}
 	return ""
 }
-
-var _ = fmt.Sprintf

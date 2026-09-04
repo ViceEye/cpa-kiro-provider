@@ -14,6 +14,17 @@
 
 架构总览与目录职责见 `AGENTS.md`；本文档记录运行时行为、流程细节和经验教训。
 
+### Provider 边界
+
+- `internal/provider` 保留 CPA 方法分发、Kiro 凭据/OAuth/执行和统一管理接口；Kiro
+  是本项目最早的核心实现，因此没有额外的 `internal/kiro` 目录。
+- `internal/cline` 只承载 Cline 上游的凭据、OAuth、请求转换、Responses/SSE 和余额
+  逻辑；这些协议和 Kiro 的 AWS Event Stream、请求格式并不相同，不强行合并。
+- `internal/pluginrpc` 统一两边重复的宿主回调 wire format、HTTP stream 操作、响应
+  envelope 和管理响应序列化。
+- `integration/` 是正式的网络隔离端到端回归套件，不是临时目录；当前覆盖 Kiro，
+  Cline 仍主要由包级测试覆盖。
+
 ### 身份约定
 
 | 层级 | 值 |
@@ -97,6 +108,22 @@
 3. 组织账号返回 AWS device 验证链接（`processBrowserCallback` 转
    `beginDeviceAuthorization`），前端展示链接与设备码并继续轮询。
 4. 成功后前端清空流程 UI（v0.7.6 起），仅保留成功提示。
+
+## Quota 唤醒计划
+
+- Nexus 控制台目前只为 **Codex** 和 **Antigravity** 提供每日唤醒计划；计划会在
+  指定时区的指定时间，对指定 `auth_index` 发起一次真实模型请求，用来消耗一次调用
+  并启动上游的 quota 窗口。它不是额度查询，也不会因为打开或刷新面板而触发。
+- 唤醒请求构建和严格成功判定适配自
+  `quota-activation` 的 Codex/Antigravity direct HTTP 路径；所有请求仍经 CPA 的
+  `host.http.do` 宿主桥发送，计划不走其它凭证的调度回退。
+- 控制台通过 CPA 通用插件配置接口持久化
+  `plugins.configs.cpa-provider-nexus.quota_triggers`。后台调度器每 15 秒检查一次，
+  同一计划同一自然日最多执行一次；计划创建或服务启动时若已错过当天时间，则等待
+  下一天，避免意外补发调用。
+- 唤醒模型由面板通过 CPA 的 `/v0/management/auth-files/models` 按所选凭证动态获取，
+  不在 Nexus 中维护固定模型列表；如果 CPA 没有返回可用模型，新计划不能保存。每次计划
+  的成功/失败状态仅保存在插件运行时，计划配置本身在重启后保留。
 
 ## 错误与状态映射
 

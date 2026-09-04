@@ -15,3 +15,8 @@ https://github.com/router-for-me/CLIProxyAPI
 This project is not affiliated with, endorsed by, or sponsored by Amazon Web
 Services, Anthropic, or Kiro. Users are responsible for compliance with the
 terms applicable to their accounts and upstream services.
+
+The quota activation request builders and response validation in
+internal/quotaactivation are adapted from quota-activation by Cody292:
+https://github.com/Cody292/quota-activation
+Those portions are used under the MIT License.

@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/ViceEye/cpa-provider-nexus/internal/pluginrpc"
 )
 
 const (
 	providerID    = "nexus"
 	pluginName    = "cpa-provider-nexus"
-	pluginVersion = "0.9.1"
+	pluginVersion = "0.9.5"
 	defaultRegion = "us-east-1"
 	nexusLogoPath = "/v0/resource/plugins/" + pluginName + "/icon.svg"
 
@@ -30,18 +32,8 @@ var defaultOIDCScopes = []string{
 	"codewhisperer:conversations",
 }
 
-type envelope struct {
-	OK     bool            `json:"ok"`
-	Result json.RawMessage `json:"result,omitempty"`
-	Error  *envelopeError  `json:"error,omitempty"`
-}
-
-type envelopeError struct {
-	Code       string `json:"code"`
-	Message    string `json:"message"`
-	Retryable  bool   `json:"retryable,omitempty"`
-	HTTPStatus int    `json:"http_status,omitempty"`
-}
+type envelope = pluginrpc.Envelope
+type envelopeError = pluginrpc.EnvelopeError
 
 type hostConfigSummary struct {
 	AuthDir          string                  `json:"AuthDir"`
@@ -342,31 +334,10 @@ type commandLineExecutionResponse struct {
 	ExitCode int        `json:"ExitCode"`
 }
 
-type hostHTTPRequest struct {
-	HostCallbackID string      `json:"host_callback_id,omitempty"`
-	Method         string      `json:"method"`
-	URL            string      `json:"url"`
-	Headers        http.Header `json:"headers,omitempty"`
-	Body           []byte      `json:"body,omitempty"`
-}
-
-type hostHTTPResponse struct {
-	StatusCode int         `json:"StatusCode"`
-	Headers    http.Header `json:"Headers"`
-	Body       []byte      `json:"Body"`
-}
-
-type hostHTTPStreamResponse struct {
-	StatusCode int         `json:"status_code"`
-	Headers    http.Header `json:"headers"`
-	StreamID   string      `json:"stream_id"`
-}
-
-type hostHTTPStreamReadResponse struct {
-	Payload []byte `json:"payload"`
-	Error   string `json:"error"`
-	Done    bool   `json:"done"`
-}
+type hostHTTPRequest = pluginrpc.HTTPRequest
+type hostHTTPResponse = pluginrpc.HTTPResponse
+type hostHTTPStreamResponse = pluginrpc.HTTPStreamResponse
+type hostHTTPStreamReadResponse = pluginrpc.HTTPStreamReadResponse
 
 type managementRequest struct {
 	Method         string              `json:"Method"`
@@ -413,20 +384,21 @@ type hostAuthGetResponse struct {
 }
 
 type pluginConfig struct {
-	ImportMode         string   `json:"import_mode"`
-	LoginMode          string   `json:"login_mode"`
-	StaticModels       []string `json:"static_models"`
-	APIRegion          string   `json:"api_region"`
-	SSORegion          string   `json:"sso_region"`
-	ModelPrefix        string   `json:"model_prefix"`
-	Fingerprint        string   `json:"fingerprint"`
-	RuntimeBaseURL     string   `json:"runtime_base_url"`
-	ModelDiscoveryURL  string   `json:"model_discovery_url"`
-	UsageURL           string   `json:"usage_url"`
-	DesktopRefreshURL  string   `json:"desktop_refresh_url"`
-	OIDCRefreshURL     string   `json:"oidc_refresh_url"`
-	SSOStartURL        string   `json:"sso_start_url"`
-	BrowserSignInURL   string   `json:"browser_signin_url"`
-	BrowserRedirectURI string   `json:"browser_redirect_uri"`
-	DesktopTokenURL    string   `json:"desktop_token_url"`
+	ImportMode         string                 `json:"import_mode"`
+	LoginMode          string                 `json:"login_mode"`
+	StaticModels       []string               `json:"static_models"`
+	QuotaTriggers      []quotaTriggerSchedule `json:"quota_triggers,omitempty"`
+	APIRegion          string                 `json:"api_region"`
+	SSORegion          string                 `json:"sso_region"`
+	ModelPrefix        string                 `json:"model_prefix"`
+	Fingerprint        string                 `json:"fingerprint"`
+	RuntimeBaseURL     string                 `json:"runtime_base_url"`
+	ModelDiscoveryURL  string                 `json:"model_discovery_url"`
+	UsageURL           string                 `json:"usage_url"`
+	DesktopRefreshURL  string                 `json:"desktop_refresh_url"`
+	OIDCRefreshURL     string                 `json:"oidc_refresh_url"`
+	SSOStartURL        string                 `json:"sso_start_url"`
+	BrowserSignInURL   string                 `json:"browser_signin_url"`
+	BrowserRedirectURI string                 `json:"browser_redirect_uri"`
+	DesktopTokenURL    string                 `json:"desktop_token_url"`
 }

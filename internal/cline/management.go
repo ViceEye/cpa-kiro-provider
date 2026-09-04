@@ -7,17 +7,6 @@ import (
 	"strings"
 )
 
-// modelsForAuth registers the free-tier catalog under the cline/ prefix.
-func modelsForAuth(raw []byte) ([]byte, error) {
-	models := make([]modelInfo, 0, len(freeModels))
-	for _, model := range freeModels {
-		entry := model
-		entry.ID = modelPrefix + model.ID
-		models = append(models, entry)
-	}
-	return okEnvelope(modelResponse{Provider: pluginProvider, Models: models})
-}
-
 // usageForConnection returns the remaining free-credit balance. The quota
 // shape mirrors the host plugin's quotaAccount output.
 func Usage(raw []byte) ([]byte, error) {
@@ -50,10 +39,10 @@ func Usage(raw []byte) ([]byte, error) {
 		persistCredentialBestEffort(cred)
 	}
 
-	headers := buildAPIHeaders(cred.AccessToken, nil)
+	headers := clineHTTPHeaders(cred.AccessToken, "")
 	meRes, err := hostHTTP(hostHTTPRequest{
 		HostCallbackID: callbackID, Method: http.MethodGet, URL: apiBase + mePath,
-		Headers: map[string][]string{"Authorization": {headers["Authorization"]}, "Accept": {"application/json"}},
+		Headers: headers,
 	})
 	if err != nil || meRes.StatusCode != http.StatusOK {
 		return managementJSON(http.StatusOK, map[string]any{
@@ -70,7 +59,7 @@ func Usage(raw []byte) ([]byte, error) {
 	balRes, err := hostHTTP(hostHTTPRequest{
 		HostCallbackID: callbackID, Method: http.MethodGet,
 		URL:     apiBase + fmt.Sprintf(balanceFmt, user.Data.ID),
-		Headers: map[string][]string{"Authorization": {headers["Authorization"]}, "Accept": {"application/json"}},
+		Headers: headers,
 	})
 	if err != nil || balRes.StatusCode != http.StatusOK {
 		return managementJSON(http.StatusOK, map[string]any{

@@ -13,6 +13,7 @@ import qwenIcon from './assets/qwen.svg';
 import vertexIcon from './assets/vertex.svg';
 
 const API = '/v0/management/plugins/cpa-provider-nexus';
+const NEXUS_PLUGIN_ID = 'cpa-provider-nexus';
 // CPA native management API (same origin, same Bearer). auth-files is the
 // single source of truth for per-credential success/failed counts and
 // per-provider quota signals across every provider, not just Kiro.
@@ -171,6 +172,11 @@ async function request(path, key, options = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw Error(data.message || data.error || `HTTP ${response.status}`);
   return data;
+}
+
+async function fetchAuthFileModels(name, key) {
+  const data = await request(`/auth-files/models?name=${encodeURIComponent(name)}`, key, { base: MGMT });
+  return Array.isArray(data.models) ? data.models : [];
 }
 
 async function downloadAuthFile(name, key) {
@@ -878,6 +884,23 @@ function CodexQuotaSection({ quota, brandIcon }) {
   );
 }
 
+function ClockIcon({ size = 15 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function PlayIcon({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M8 5.5v13a1 1 0 0 0 1.53.85l9.5-6.5a1 1 0 0 0 0-1.7l-9.5-6.5A1 1 0 0 0 8 5.5Z" />
+    </svg>
+  );
+}
+
 function InfoIcon({ size = 14 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1224,7 +1247,7 @@ function resetLabel(epochSec) {
   return formatDate(new Date(epochSec * 1000).toISOString());
 }
 
-function Card({ file, mgmtKey, onChanged, refreshAll }) {
+function Card({ file, mgmtKey, onChanged, refreshAll, onOpenQuotaTrigger }) {
   const providerKey = normalizeKey(file.provider || file.type || 'kiro');
   const color = typeColor(providerKey);
   const label = typeLabel(providerKey);
@@ -1332,8 +1355,7 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
     setModelsLoading(true);
     setActionError('');
     try {
-      const data = await request(`/auth-files/models?name=${encodeURIComponent(file.name)}`, mgmtKey, { base: MGMT });
-      setModels(Array.isArray(data.models) ? data.models : []);
+      setModels(await fetchAuthFileModels(file.name, mgmtKey));
     } catch (e) {
       setActionError(`模型获取失败：${e.message}`);
     } finally {
@@ -1599,6 +1621,11 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
           <button className="btn modelButton" onClick={showModels} disabled={modelsLoading} title="查看支持的模型">
             {modelsLoading ? '加载中…' : <><ModelClusterIcon size={14} /><span>模型</span></>}
           </button>
+          {(isCodex || isAntigravity) && (
+            <button className="btn iconButton" onClick={() => onOpenQuotaTrigger?.(file.auth_index)} disabled={!file.auth_index} title="设置每日 Quota 唤醒" aria-label="设置每日 Quota 唤醒">
+              <ClockIcon />
+            </button>
+          )}
           <button
             className="btn iconButton"
             onClick={isKiro || isCline ? refreshQuota : isAntigravity ? refreshAntigravity : isCodex ? refreshCodex : onChanged}
@@ -1655,6 +1682,486 @@ function Card({ file, mgmtKey, onChanged, refreshAll }) {
         </div>
       )}
     </article>
+  );
+}
+
+function quotaTriggerConfigShape(schedule) {
+  return {
+    id: schedule.id,
+    provider: normalizeKey(schedule.provider),
+    auth_index: schedule.auth_index,
+    model: schedule.model,
+    time: schedule.time,
+    timezone: schedule.timezone,
+    enabled: schedule.enabled !== false,
+  };
+}
+
+function quotaTriggerAccountLabel(file) {
+  return file?.email || file?.label || file?.name || file?.auth_index || '未命名凭证';
+}
+
+function quotaTriggerTimestamp(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : formatDate(value);
+}
+
+function quotaTriggerModelValue(model) {
+  const raw = typeof model === 'string'
+    ? model
+    : model?.id ?? model?.model_id ?? model?.modelId ?? model?.name ?? '';
+  return String(raw || '')
+    .trim()
+    .replace(/^(?:nexus|codex|antigravity)\//i, '');
+}
+
+function quotaTriggerModelLabel(model, value) {
+  if (typeof model === 'string') return value;
+  return String(model?.display_name ?? model?.displayName ?? model?.name ?? value).trim() || value;
+}
+
+function normalizeQuotaTriggerModels(models) {
+  const seen = new Set();
+  return (Array.isArray(models) ? models : [])
+    .map((model) => {
+      const value = quotaTriggerModelValue(model);
+      return value ? { value, label: quotaTriggerModelLabel(model, value) } : null;
+    })
+    .filter((model) => {
+      if (!model || seen.has(model.value)) return false;
+      seen.add(model.value);
+      return true;
+    });
+}
+
+function QuotaTriggerPanel({ mgmtKey, files, targetAuthIndex, onClose, onChanged }) {
+  const candidates = useMemo(
+    () => files.filter((file) => ['codex', 'antigravity'].includes(normalizeKey(file.provider || file.type)) && file.auth_index),
+    [files]
+  );
+  const browserTimezone = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC', []);
+  const [schedules, setSchedules] = useState([]);
+  const [modelsByCredential, setModelsByCredential] = useState({});
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [runningId, setRunningId] = useState('');
+  const [editingId, setEditingId] = useState('');
+  const [formOpen, setFormOpen] = useState(true);
+  const [formError, setFormError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [form, setForm] = useState({
+    id: '',
+    provider: 'codex',
+    auth_index: '',
+    model: '',
+    time: '08:30',
+    timezone: browserTimezone,
+    enabled: true,
+  });
+
+  const candidateFor = useCallback(
+    (authIndex, allowFallback = true) => candidates.find((file) => file.auth_index === authIndex) || (allowFallback ? candidates[0] : null),
+    [candidates]
+  );
+
+  const formFor = useCallback(
+    (authIndex, current = {}) => {
+      const candidate = candidateFor(authIndex);
+      const provider = normalizeKey(candidate?.provider || candidate?.type || current.provider || 'codex');
+      return {
+        id: current.id || '',
+        provider,
+        auth_index: candidate?.auth_index || current.auth_index || '',
+        model: quotaTriggerModelValue(current.model),
+        time: current.time || '08:30',
+        timezone: current.timezone || browserTimezone,
+        enabled: current.enabled !== false,
+      };
+    },
+    [browserTimezone, candidateFor]
+  );
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setFormError('');
+    try {
+      const data = await request('/quota-triggers', mgmtKey);
+      setSchedules(Array.isArray(data.schedules) ? data.schedules : []);
+    } catch (e) {
+      setFormError(`计划读取失败：${e.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [mgmtKey]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    const timer = window.setInterval(load, 30000);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  useEffect(() => {
+    if (editingId) return;
+    setForm((current) => formFor(targetAuthIndex || current.auth_index));
+  }, [editingId, formFor, targetAuthIndex]);
+
+  useEffect(() => {
+    if (!targetAuthIndex || !schedules.length || editingId) return;
+    const existing = schedules.find((schedule) => schedule.auth_index === targetAuthIndex);
+    if (!existing) return;
+    setEditingId(existing.id);
+    setForm(formFor(existing.auth_index, existing));
+    setFormOpen(true);
+  }, [editingId, formFor, schedules, targetAuthIndex]);
+
+  const persist = useCallback(
+    async (nextSchedules) => {
+      setSaving(true);
+      setFormError('');
+      try {
+        await request(`/plugins/${NEXUS_PLUGIN_ID}/config`, mgmtKey, {
+          base: MGMT,
+          method: 'PATCH',
+          body: JSON.stringify({ quota_triggers: nextSchedules.map(quotaTriggerConfigShape) }),
+        });
+        setSchedules(nextSchedules);
+        setNotice('计划已保存，后台调度已更新');
+        window.setTimeout(load, 300);
+        onChanged?.();
+        return true;
+      } catch (e) {
+        setFormError(`计划保存失败：${e.message}`);
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [load, mgmtKey, onChanged]
+  );
+
+  const saveForm = useCallback(
+    async (event) => {
+      event.preventDefault();
+      const authIndex = form.auth_index.trim();
+      if (!authIndex) {
+        setFormError('请选择凭证');
+        return;
+      }
+      const model = quotaTriggerModelValue(form.model);
+      if (!model) {
+        setFormError(modelsError || '请选择该凭证的可用模型');
+        return;
+      }
+      if (!/^\d{2}:\d{2}$/.test(form.time)) {
+        setFormError('时间格式无效');
+        return;
+      }
+      if (!form.timezone.trim()) {
+        setFormError('请填写时区');
+        return;
+      }
+      try {
+        new Intl.DateTimeFormat('en-US', { timeZone: form.timezone.trim() }).format();
+      } catch {
+        setFormError('时区无效，请使用例如 Asia/Shanghai 的时区名称');
+        return;
+      }
+      const duplicate = schedules.find((schedule) => schedule.auth_index === authIndex && schedule.id !== editingId);
+      if (duplicate) {
+        setFormError('这个凭证已经有一个计划，请直接编辑现有计划');
+        return;
+      }
+      const item = {
+        ...form,
+        id: editingId || `qt-${Date.now().toString(36)}`,
+        auth_index: authIndex,
+        model,
+        timezone: form.timezone.trim(),
+        enabled: form.enabled !== false,
+      };
+      const next = editingId
+        ? schedules.map((schedule) => (schedule.id === editingId ? item : schedule))
+        : [...schedules, item];
+      if (await persist(next)) {
+        setEditingId('');
+        setFormOpen(false);
+      }
+    },
+    [editingId, form, modelsError, persist, schedules]
+  );
+
+  const startNew = useCallback(
+    (authIndex = targetAuthIndex) => {
+      setEditingId('');
+      setForm(formFor(authIndex || candidates[0]?.auth_index));
+      setFormError('');
+      setNotice('');
+      setFormOpen(true);
+    },
+    [candidates, formFor, targetAuthIndex]
+  );
+
+  const editSchedule = useCallback(
+    (schedule) => {
+      setEditingId(schedule.id);
+      setForm(formFor(schedule.auth_index, schedule));
+      setFormError('');
+      setNotice('');
+      setFormOpen(true);
+    },
+    [formFor]
+  );
+
+  const removeSchedule = useCallback(
+    async (schedule) => {
+      if (!window.confirm(`删除“${quotaTriggerAccountLabel(candidateFor(schedule.auth_index, false))}”的每日触发计划吗？`)) return;
+      await persist(schedules.filter((item) => item.id !== schedule.id));
+      if (editingId === schedule.id) {
+        setEditingId('');
+        setFormOpen(false);
+      }
+    },
+    [candidateFor, editingId, persist, schedules]
+  );
+
+  const toggleSchedule = useCallback(
+    async (schedule) => {
+      await persist(schedules.map((item) => (item.id === schedule.id ? { ...item, enabled: item.enabled === false } : item)));
+    },
+    [persist, schedules]
+  );
+
+  const runNow = useCallback(
+    async (schedule) => {
+      setRunningId(schedule.id);
+      setFormError('');
+      setNotice('');
+      try {
+        const result = await request('/quota-triggers/run', mgmtKey, {
+          method: 'POST',
+          body: JSON.stringify({ id: schedule.id }),
+        });
+        if (result.status === 'success') setNotice(`${quotaTriggerAccountLabel(candidateFor(schedule.auth_index, false))} 已完成一次唤醒请求`);
+        else setFormError(result.message || '唤醒失败');
+        await load();
+        onChanged?.();
+      } catch (e) {
+        setFormError(`立即触发失败：${e.message}`);
+      } finally {
+        setRunningId('');
+      }
+    },
+    [candidateFor, load, mgmtKey, onChanged]
+  );
+
+  const selectedCandidate = candidateFor(form.auth_index);
+  const selectedCredentialKey = selectedCandidate?.name || selectedCandidate?.auth_index || '';
+  const availableModels = selectedCredentialKey ? modelsByCredential[selectedCredentialKey] || [] : [];
+  const modelOptions = useMemo(() => {
+    const options = [...availableModels];
+    const selectedModel = quotaTriggerModelValue(form.model);
+    if (selectedModel && !options.some((model) => model.value === selectedModel)) {
+      options.unshift({ value: selectedModel, label: `${selectedModel}（当前计划）` });
+    }
+    return options;
+  }, [availableModels, form.model]);
+
+  useEffect(() => {
+    const candidate = selectedCandidate;
+    const credentialKey = candidate?.name || candidate?.auth_index || '';
+    if (!credentialKey || !candidate?.name) {
+      setModelsLoading(false);
+      setModelsError('');
+      return undefined;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(modelsByCredential, credentialKey)) {
+      const options = modelsByCredential[credentialKey];
+      setModelsLoading(false);
+      setModelsError('');
+      if (options.length) {
+        setForm((current) => (
+          (!current.auth_index || current.auth_index === candidate.auth_index) && !current.model
+            ? { ...current, model: options[0].value }
+            : current
+        ));
+      }
+      return undefined;
+    }
+
+    let cancelled = false;
+    setModelsLoading(true);
+    setModelsError('');
+    fetchAuthFileModels(candidate.name, mgmtKey)
+      .then((models) => {
+        if (cancelled) return;
+        const options = normalizeQuotaTriggerModels(models);
+        setModelsByCredential((current) => ({ ...current, [credentialKey]: options }));
+        if (options.length) {
+          setForm((current) => (
+            (!current.auth_index || current.auth_index === candidate.auth_index) && !current.model
+              ? { ...current, model: options[0].value }
+              : current
+          ));
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) setModelsError(`可用模型获取失败：${error.message}`);
+      })
+      .finally(() => {
+        if (!cancelled) setModelsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mgmtKey, modelsByCredential, selectedCandidate?.auth_index, selectedCandidate?.name]);
+
+  const busy = saving || Boolean(runningId);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape' && !busy) onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [busy, onClose]);
+
+  return (
+    <div
+      className="quotaTriggerModalBackdrop"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onClose();
+      }}
+    >
+      <section
+        className="panel quotaTriggerPanel quotaTriggerModal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="quota-trigger-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="quotaTriggerHead">
+          <div>
+            <div className="quotaTriggerTitle"><ClockIcon /><h2 id="quota-trigger-title">Quota 唤醒计划</h2></div>
+            <span className="muted">按账户和本地时间定时发起一次真实模型请求</span>
+          </div>
+          <button type="button" className="btn iconButton" onClick={onClose} disabled={busy} title="关闭计划弹窗" aria-label="关闭计划弹窗">×</button>
+        </div>
+
+        <div className="triggerNotice">
+          <InfoIcon size={14} />
+          <span>每次计划会消耗一次真实模型调用，用于启动 Codex 或 Antigravity 的额度窗口；不会因为刷新网页而触发。</span>
+        </div>
+
+        {(formError || notice) && <div className={formError ? 'errorBox triggerMessage' : 'triggerSuccess'}>{formError || notice}</div>}
+
+        {formOpen ? (
+          <form className="quotaTriggerForm" onSubmit={saveForm}>
+            <div className="triggerFormGrid">
+              <label className="triggerField">
+                <span>指定账户</span>
+                <select
+                  value={form.auth_index}
+                  onChange={(event) => {
+                    const candidate = candidateFor(event.target.value);
+                    const nextProvider = normalizeKey(candidate?.provider || candidate?.type || 'codex');
+                    setForm((current) => ({
+                      ...current,
+                      provider: nextProvider,
+                      auth_index: event.target.value,
+                      model: '',
+                    }));
+                  }}
+                  disabled={!candidates.length || saving}
+                >
+                  <option value="">选择 Codex 或 Antigravity 凭证</option>
+                  {candidates.map((file) => <option key={file.auth_index} value={file.auth_index}>{quotaTriggerAccountLabel(file)}</option>)}
+                </select>
+              </label>
+              <label className="triggerField">
+                <span>每日触发时间</span>
+                <input type="time" value={form.time} onChange={(event) => setForm((current) => ({ ...current, time: event.target.value }))} disabled={saving} />
+              </label>
+              <label className="triggerField">
+                <span>计划时区</span>
+                <input type="text" value={form.timezone} onChange={(event) => setForm((current) => ({ ...current, timezone: event.target.value }))} placeholder="例如 Asia/Shanghai" disabled={saving} />
+              </label>
+              <label className="triggerField">
+                <span>唤醒模型</span>
+                <select
+                  value={form.model}
+                  onChange={(event) => setForm((current) => ({ ...current, model: event.target.value }))}
+                  disabled={saving || modelsLoading || !selectedCandidate || !modelOptions.length}
+                >
+                  <option value="">
+                    {modelsLoading ? '读取可用模型…' : modelsError ? '可用模型读取失败' : modelOptions.length ? '选择可用模型' : '该凭证暂无可用模型'}
+                  </option>
+                  {modelOptions.map((model) => (
+                    <option key={model.value} value={model.value}>
+                      {model.label === model.value ? model.label : `${model.label} · ${model.value}`}
+                    </option>
+                  ))}
+                </select>
+                <small>{modelsError || (modelsLoading ? '正在从 CPA 获取可用模型' : modelOptions.length ? `${modelOptions.length} 个可用模型` : '该凭证没有返回可用模型')}</small>
+              </label>
+            </div>
+            <div className="quotaTriggerFormActions">
+              <span className="muted">{editingId ? '编辑现有计划' : '新建每日计划'}</span>
+              <div>
+                {editingId && <button type="button" className="btn" onClick={() => { setEditingId(''); setFormOpen(false); }}>取消编辑</button>}
+                <button type="submit" className="btn btnPrimary" disabled={saving || modelsLoading || !candidates.length || !form.model.trim()}>{saving ? '保存中…' : '保存计划'}</button>
+              </div>
+            </div>
+          </form>
+        ) : (
+          <button type="button" className="btn quotaTriggerNew" onClick={() => startNew()} disabled={!candidates.length}>新建唤醒计划</button>
+        )}
+
+        <div className="quotaTriggerList">
+          <div className="quotaTriggerListHead"><strong>已配置计划</strong><span className="muted">{loading ? '读取中…' : `${schedules.length} 个`}</span></div>
+          {!loading && !schedules.length && <div className="quotaEmpty">还没有计划。比如选择一个账户，设置每天 08:30。</div>}
+          {schedules.map((schedule) => {
+            const file = candidateFor(schedule.auth_index, false);
+            const scheduleProvider = normalizeKey(schedule.provider);
+            const isRunning = runningId === schedule.id || schedule.running;
+            const status = schedule.last_status === 'success'
+              ? `上次成功 ${quotaTriggerTimestamp(schedule.last_run_at)}`
+              : schedule.last_status === 'error'
+                ? `上次失败：${schedule.last_error || '未知错误'}`
+                : schedule.last_status === 'running'
+                  ? '正在执行…'
+                  : '尚未执行';
+            return (
+              <div className={`quotaTriggerRow${schedule.enabled === false ? ' quotaTriggerRowDisabled' : ''}`} key={schedule.id}>
+                <div className="quotaTriggerRowMain">
+                  <div className="quotaTriggerRowTitle">
+                    <span className={`triggerProviderTag triggerProvider${scheduleProvider}`}>{typeLabel(scheduleProvider)}</span>
+                    <strong title={quotaTriggerAccountLabel(file)}>{quotaTriggerAccountLabel(file)}</strong>
+                  </div>
+                  <div className="quotaTriggerRowMeta">每天 {schedule.time} · {schedule.timezone} · {schedule.model}</div>
+                  <div className={`quotaTriggerRowStatus ${schedule.last_status === 'error' ? 'quotaTriggerStatusError' : schedule.last_status === 'success' ? 'quotaTriggerStatusSuccess' : ''}`} title={schedule.last_error || status}>{status}</div>
+                  {schedule.enabled !== false && schedule.next_run_at && <div className="quotaTriggerRowNext">下次：{quotaTriggerTimestamp(schedule.next_run_at)}</div>}
+                </div>
+                <div className="quotaTriggerRowActions">
+                  <button type="button" className={`toggle ${schedule.enabled !== false ? 'checked' : ''}`} role="switch" aria-checked={schedule.enabled !== false} onClick={() => toggleSchedule(schedule)} disabled={saving || isRunning} title={schedule.enabled === false ? '启用计划' : '停用计划'}><span className="toggleThumb" /></button>
+                  <button type="button" className="btn iconButton" onClick={() => runNow(schedule)} disabled={saving || isRunning} title="立即触发" aria-label="立即触发">{isRunning ? <RefreshIcon /> : <PlayIcon />}</button>
+                  <button type="button" className="btn iconButton" onClick={() => editSchedule(schedule)} disabled={saving || isRunning} title="编辑计划" aria-label="编辑计划">✎</button>
+                  <button type="button" className="btn iconButton dangerButton" onClick={() => removeSchedule(schedule)} disabled={saving || isRunning} title="删除计划" aria-label="删除计划"><TrashIcon /></button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1928,6 +2435,8 @@ function App() {
   const [refreshAllTick, setRefreshAllTick] = useState(0);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [oauthPageOpen, setOauthPageOpen] = useState(false);
+  const [quotaTriggerOpen, setQuotaTriggerOpen] = useState(false);
+  const [quotaTriggerTarget, setQuotaTriggerTarget] = useState('');
 
   useEffect(() => {
     syncCPATheme();
@@ -1957,6 +2466,11 @@ function App() {
     setRefreshAllTick((n) => n + 1);
     setRefreshingAll(true);
     setTimeout(() => setRefreshingAll(false), 900);
+  }, []);
+
+  const openQuotaTrigger = useCallback((authIndex = '') => {
+    setQuotaTriggerTarget(authIndex);
+    setQuotaTriggerOpen(true);
   }, []);
 
   const load = useCallback(async () => {
@@ -2044,10 +2558,26 @@ function App() {
           <h2>认证文件</h2>
           <span className="muted">{files.length} 个凭证 · {enabled} 个启用</span>
         </div>
-        <button className="btn btnPrimary" onClick={load} disabled={loading} title="重新拉取凭证列表">
-          {loading ? '刷新中…' : '刷新列表'}
-        </button>
+        <div className="toolbarActions">
+          <button className="btn" onClick={() => openQuotaTrigger()} disabled={!key} title="设置每日 Quota 唤醒计划">
+            <ClockIcon />
+            <span>Quota 计划</span>
+          </button>
+          <button className="btn btnPrimary" onClick={load} disabled={loading} title="重新拉取凭证列表">
+            {loading ? '刷新中…' : '刷新列表'}
+          </button>
+        </div>
       </section>
+
+      {key && quotaTriggerOpen && (
+        <QuotaTriggerPanel
+          mgmtKey={key}
+          files={files}
+          targetAuthIndex={quotaTriggerTarget}
+          onClose={() => setQuotaTriggerOpen(false)}
+          onChanged={load}
+        />
+      )}
 
       <div className="tabs">
         <div className="tabList">
@@ -2055,6 +2585,7 @@ function App() {
             ['all', '全部'],
             ['kiro', 'Kiro'],
             ['codex', 'Codex'],
+            ['antigravity', 'Antigravity'],
             ['disabled', '已停用'],
           ].map(([value, text]) => (
             <button
@@ -2097,7 +2628,7 @@ function App() {
 
       <section className="grid">
         {visible.map((f) => (
-          <Card key={`${f.provider}:${f.auth_index || f.name}`} file={f} mgmtKey={key} onChanged={load} refreshAll={refreshAllTick} />
+          <Card key={`${f.provider}:${f.auth_index || f.name}`} file={f} mgmtKey={key} onChanged={load} refreshAll={refreshAllTick} onOpenQuotaTrigger={openQuotaTrigger} />
         ))}
         {!loading && !visible.length && (
           <div className="empty">{key ? '没有匹配的认证文件' : '请输入 Management Key，然后点击保存'}</div>

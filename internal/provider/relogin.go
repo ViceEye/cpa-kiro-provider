@@ -132,7 +132,3 @@ func (r managementRequest) QueryValue(key string) string {
 	}
 	return ""
 }
-
-func managementJSON(status int, body map[string]any) []byte {
-	return mustJSON(map[string]any{"ok": true, "result": map[string]any{"StatusCode": status, "Headers": jsonHeaders(), "Body": mustJSON(body)}})
-}

@@ -202,6 +202,20 @@ body {
   margin-bottom: 18px;
 }
 
+.toolbarActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.toolbarActions .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
 .panelRow {
   display: flex;
   gap: 12px;
@@ -1058,6 +1072,289 @@ body {
   cursor: default;
 }
 
+.quotaTriggerPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.quotaTriggerModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 20px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(2px);
+}
+
+.quotaTriggerModal {
+  width: min(700px, 100%);
+  max-height: calc(100vh - 40px);
+  margin: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--floating-surface);
+  box-shadow: var(--floating-shadow), 0 24px 64px rgba(0, 0, 0, 0.28);
+}
+
+.quotaTriggerModal .quotaTriggerHead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-bottom: 2px;
+  background: var(--floating-surface);
+}
+
+.quotaTriggerHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quotaTriggerTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+}
+
+.quotaTriggerTitle h2 {
+  margin: 0 0 3px;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.triggerNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--warning-border);
+  border-radius: 9px;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.triggerNotice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.triggerMessage {
+  margin: 0;
+}
+
+.triggerSuccess {
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--viz-success) 35%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--viz-success) 9%, transparent);
+  color: var(--success-badge-text);
+  font-size: 12px;
+}
+
+.quotaTriggerForm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-secondary) 58%, transparent);
+}
+
+.triggerFormGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.triggerField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.triggerField input,
+.triggerField select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.triggerField input:focus,
+.triggerField select:focus {
+  outline: 2px solid var(--primary-30);
+  outline-offset: 1px;
+  border-color: var(--border-hover);
+}
+
+.triggerField small {
+  min-height: 15px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.quotaTriggerFormActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.quotaTriggerFormActions > div {
+  display: flex;
+  gap: 8px;
+}
+
+.quotaTriggerNew {
+  align-self: flex-start;
+}
+
+.quotaTriggerList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quotaTriggerListHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.quotaTriggerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-secondary) 62%, transparent);
+}
+
+.quotaTriggerRowDisabled {
+  opacity: 0.62;
+}
+
+.quotaTriggerRowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.quotaTriggerRowTitle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text-primary);
+}
+
+.quotaTriggerRowTitle strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.triggerProviderTag {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.triggerProvidercodex {
+  background: color-mix(in srgb, #6366f1 15%, var(--bg-tertiary));
+  color: var(--primary-active);
+}
+
+.triggerProviderantigravity {
+  background: color-mix(in srgb, #06b6d4 15%, var(--bg-tertiary));
+  color: #0e7490;
+}
+
+.quotaTriggerRowMeta,
+.quotaTriggerRowStatus,
+.quotaTriggerRowNext {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.quotaTriggerRowStatus {
+  color: var(--text-secondary);
+}
+
+.quotaTriggerStatusSuccess {
+  color: var(--success-badge-text);
+}
+
+.quotaTriggerStatusError {
+  color: var(--warning-text);
+}
+
+.quotaTriggerRowNext {
+  color: var(--text-quaternary);
+}
+
+.quotaTriggerRowActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.quotaTriggerRowActions .toggle {
+  width: 42px;
+  height: 24px;
+  padding: 3px;
+}
+
+.quotaTriggerRowActions .toggleThumb {
+  width: 18px;
+  height: 18px;
+}
+
+.quotaTriggerRowActions .toggle.checked .toggleThumb {
+  transform: translateX(18px);
+}
+
 .quotaBox {
   display: flex;
   flex-direction: column;
@@ -1723,6 +2020,12 @@ body {
   .keyPanel input {
     flex-basis: 100%;
   }
+  .toolbarActions {
+    width: 100%;
+  }
+  .toolbarActions .btn {
+    flex: 1 1 0;
+  }
   .oauthPanel {
     flex-wrap: wrap;
   }
@@ -1738,6 +2041,37 @@ body {
   }
   .panelRow {
     flex-direction: column;
+  }
+  .quotaTriggerHead {
+    align-items: flex-start;
+  }
+  .quotaTriggerModalBackdrop {
+    align-items: flex-start;
+    padding: 12px;
+  }
+  .quotaTriggerModal {
+    max-height: calc(100vh - 24px);
+  }
+  .triggerFormGrid {
+    grid-template-columns: 1fr;
+  }
+  .quotaTriggerFormActions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .quotaTriggerFormActions > div {
+    width: 100%;
+  }
+  .quotaTriggerFormActions .btn {
+    flex: 1 1 0;
+  }
+  .quotaTriggerRow {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .quotaTriggerRowActions {
+    width: 100%;
+    justify-content: flex-end;
   }
   .antigravityQuotaSection .quotaRowHeader {
     flex-direction: column;

@@ -38,14 +38,8 @@ func Execute(raw []byte) ([]byte, error) {
 		HostCallbackID: req.HostCallbackID,
 		Method:         http.MethodPost,
 		URL:            apiBase + chatPath,
-		Headers: map[string][]string{
-			"Authorization": {"Bearer workos:" + cred.AccessToken},
-			"Content-Type":  {"application/json"},
-			"HTTP-Referer":  {clineIdentityHeaders["HTTP-Referer"]},
-			"X-Title":       {clineIdentityHeaders["X-Title"]},
-			"X-CLIENT-TYPE": {clineIdentityHeaders["X-CLIENT-TYPE"]},
-		},
-		Body: payload,
+		Headers:        clineHTTPHeaders(cred.AccessToken, ""),
+		Body:           payload,
 	})
 	if err != nil {
 		observeRequest(authID, req.Model, false, err.Error())
@@ -63,14 +57,8 @@ func Execute(raw []byte) ([]byte, error) {
 			HostCallbackID: req.HostCallbackID,
 			Method:         http.MethodPost,
 			URL:            apiBase + chatPath,
-			Headers: map[string][]string{
-				"Authorization": {"Bearer workos:" + cred.AccessToken},
-				"Content-Type":  {"application/json"},
-				"HTTP-Referer":  {clineIdentityHeaders["HTTP-Referer"]},
-				"X-Title":       {clineIdentityHeaders["X-Title"]},
-				"X-CLIENT-TYPE": {clineIdentityHeaders["X-CLIENT-TYPE"]},
-			},
-			Body: payload,
+			Headers:        clineHTTPHeaders(cred.AccessToken, ""),
+			Body:           payload,
 		})
 		if err != nil {
 			observeRequest(authID, req.Model, false, err.Error())
@@ -132,15 +120,8 @@ func ExecuteStream(raw []byte) ([]byte, error) {
 		HostCallbackID: req.HostCallbackID,
 		Method:         http.MethodPost,
 		URL:            apiBase + chatPath,
-		Headers: map[string][]string{
-			"Authorization": {"Bearer workos:" + cred.AccessToken},
-			"Content-Type":  {"application/json"},
-			"Accept":        {"text/event-stream"},
-			"HTTP-Referer":  {clineIdentityHeaders["HTTP-Referer"]},
-			"X-Title":       {clineIdentityHeaders["X-Title"]},
-			"X-CLIENT-TYPE": {clineIdentityHeaders["X-CLIENT-TYPE"]},
-		},
-		Body: payload,
+		Headers:        clineHTTPHeaders(cred.AccessToken, "text/event-stream"),
+		Body:           payload,
 	})
 	if err != nil {
 		observeRequest(authID, req.Model, false, err.Error())

@@ -61,7 +61,6 @@ import (
 	"net/http"
 	"unsafe"
 
-	"github.com/ViceEye/cpa-provider-nexus/internal/cline"
 	"github.com/ViceEye/cpa-provider-nexus/internal/provider"
 )
 
@@ -76,7 +75,6 @@ func cliproxy_plugin_init(host *C.cliproxy_host_api, plugin *C.cliproxy_plugin_a
 	}
 	C.store_host_api(host)
 	provider.SetHostCaller(callHost)
-	cline.SetHostCaller(callHost)
 	plugin.abi_version = C.uint32_t(abiVersion)
 	plugin.call = C.cliproxy_plugin_call_fn(C.cliproxyPluginCall)
 	plugin.free_buffer = C.cliproxy_plugin_free_fn(C.cliproxyPluginFree)
@@ -116,7 +114,7 @@ func cliproxyPluginFree(ptr unsafe.Pointer, length C.size_t) {
 }
 
 //export cliproxyPluginShutdown
-func cliproxyPluginShutdown() {}
+func cliproxyPluginShutdown() { provider.Shutdown() }
 
 func callHost(method string, payload any) (json.RawMessage, error) {
 	rawPayload, errMarshal := json.Marshal(payload)

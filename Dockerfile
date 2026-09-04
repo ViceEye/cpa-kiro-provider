@@ -1,4 +1,4 @@
-FROM golang:1.26-bookworm AS builder
+FROM golang:1.26.7-bookworm AS builder
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -12,10 +12,10 @@ RUN /usr/local/go/bin/gofmt -w cmd/cpa-provider-nexus/*.go internal/*/*.go \
     && CGO_ENABLED=1 GOOS=linux GOARCH=amd64 /usr/local/go/bin/go build \
        -buildvcs=false -trimpath -buildmode=c-shared \
        -ldflags="-s -w" \
-       -o /out/linux/amd64/cpa-provider-nexus-v0.9.1.so ./cmd/cpa-provider-nexus \
+       -o /out/linux/amd64/cpa-provider-nexus-v0.9.5.so ./cmd/cpa-provider-nexus \
     && rm -f /out/linux/amd64/*.h \
     && cd /out/linux/amd64 \
-    && sha256sum cpa-provider-nexus-v0.9.1.so > cpa-provider-nexus-v0.9.1.so.sha256
+    && sha256sum cpa-provider-nexus-v0.9.5.so > cpa-provider-nexus-v0.9.5.so.sha256
 
 FROM scratch
 COPY --from=builder /out/ /
