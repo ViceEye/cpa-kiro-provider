@@ -12,22 +12,22 @@ import (
 const AntigravityActivationURL = "https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent"
 
 type antigravityActivationBody struct {
-	Project     string                    `json:"project"`
-	Model       string                    `json:"model"`
-	UserAgent   string                    `json:"userAgent"`
-	RequestType string                    `json:"requestType"`
-	RequestID   string                    `json:"requestId"`
-	Request     antigravityInnerRequest   `json:"request"`
+	Project     string                  `json:"project"`
+	Model       string                  `json:"model"`
+	UserAgent   string                  `json:"userAgent"`
+	RequestType string                  `json:"requestType"`
+	RequestID   string                  `json:"requestId"`
+	Request     antigravityInnerRequest `json:"request"`
 }
 
 type antigravityInnerRequest struct {
-	SessionID string                 `json:"sessionId"`
-	Contents  []antigravityContent   `json:"contents"`
+	SessionID string               `json:"sessionId"`
+	Contents  []antigravityContent `json:"contents"`
 }
 
 type antigravityContent struct {
-	Role  string             `json:"role"`
-	Parts []antigravityPart  `json:"parts"`
+	Role  string            `json:"role"`
+	Parts []antigravityPart `json:"parts"`
 }
 
 type antigravityPart struct {
@@ -66,7 +66,7 @@ func BuildAntigravityProtocol(material AuthMaterial, model, prompt string) (Prot
 		Project: project, Model: model, UserAgent: "antigravity", RequestType: "agent", RequestID: requestID,
 		Request: antigravityInnerRequest{
 			SessionID: sessionID,
-			Contents: []antigravityContent{{Role: "user", Parts: []antigravityPart{{Text: prompt}}}},
+			Contents:  []antigravityContent{{Role: "user", Parts: []antigravityPart{{Text: prompt}}}},
 		},
 	})
 	if err != nil {

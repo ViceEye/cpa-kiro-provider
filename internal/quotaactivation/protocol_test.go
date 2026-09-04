@@ -31,8 +31,8 @@ func TestBuildCodexProtocolUsesNativeActivationShape(t *testing.T) {
 		t.Fatalf("headers = %#v", request.Headers)
 	}
 	var body struct {
-		Model  string `json:"model"`
-		Input  []struct {
+		Model string `json:"model"`
+		Input []struct {
 			Type    string `json:"type"`
 			Role    string `json:"role"`
 			Content []struct {

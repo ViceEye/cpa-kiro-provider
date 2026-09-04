@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	quotaTriggerTickInterval       = 15 * time.Second
-	quotaTriggerPrompt             = "quota activation ping"
+	quotaTriggerTickInterval = 15 * time.Second
+	quotaTriggerPrompt       = "quota activation ping"
 )
 
 var quotaTriggerProviders = map[string]struct{}{
@@ -398,9 +398,9 @@ func handleQuotaTriggersGet() ([]byte, error) {
 		StatusCode: http.StatusOK,
 		Headers:    jsonHeaders(),
 		Body: mustJSON(map[string]any{
-			"provider":      providerID,
-			"generated_at":  time.Now().UTC().Format(time.RFC3339),
-			"schedules": quotaTriggerViews(),
+			"provider":     providerID,
+			"generated_at": time.Now().UTC().Format(time.RFC3339),
+			"schedules":    quotaTriggerViews(),
 		}),
 	})
 }

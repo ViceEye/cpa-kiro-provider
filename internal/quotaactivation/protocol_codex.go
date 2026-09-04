@@ -10,11 +10,11 @@ import (
 const CodexActivationURL = "https://chatgpt.com/backend-api/codex/responses"
 
 type codexActivationBody struct {
-	Model        string             `json:"model"`
-	Instructions string             `json:"instructions"`
+	Model        string              `json:"model"`
+	Instructions string              `json:"instructions"`
 	Input        []codexInputMessage `json:"input"`
-	Store        bool               `json:"store"`
-	Stream       bool               `json:"stream"`
+	Store        bool                `json:"store"`
+	Stream       bool                `json:"stream"`
 }
 
 type codexInputMessage struct {
@@ -47,8 +47,8 @@ func BuildCodexProtocol(material AuthMaterial, model, prompt string) (ProtocolRe
 		Model:        model,
 		Instructions: "You are a helpful assistant.",
 		Input: []codexInputMessage{{
-			Type: "message",
-			Role: "user",
+			Type:    "message",
+			Role:    "user",
 			Content: []codexInputPart{{Type: "input_text", Text: prompt}},
 		}},
 		Store:  false,
